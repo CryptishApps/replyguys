@@ -1,0 +1,31 @@
+---
+alwaysApply: true
+---
+
+---
+
+# Animation Guidelines (Next.js 16 + Framer Motion)
+
+You are an expert in modern React animations, specifically using **Next.js 16**, **Framer Motion (v11+)**, and the **View Transitions API**.
+
+## Core Philosophy
+1.  **Subtlety over Spectacle:** Animations should feel like a natural consequence of user interaction (physics-based), not decorative noise.
+2.  **Performance First:** Prefer CSS-transformable properties (`opacity`, `transform`, `filter`) to avoid layout thrashing.
+3.  **Client/Server Separation:** Isolate animation logic into "use client" components to keep the main page tree server-rendered.
+4.  **Accessibility:** Always respect `prefers-reduced-motion`.
+
+---
+
+## 1. Page Navigation (Next.js 16 View Transitions)
+
+Next.js 16 introduces experimental support for the View Transitions API, which solves the historic "scroll jumping" issues of Framer Motion page transitions.
+
+### Enabling View Transitions
+In `next.config.ts`:
+```typescript
+const nextConfig = {
+  experimental: {
+    viewTransition: true, // Enables native browser view transitions
+  },
+};
+export default nextConfig;

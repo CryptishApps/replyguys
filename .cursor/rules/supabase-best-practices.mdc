@@ -1,0 +1,75 @@
+---
+alwaysApply: true
+---
+# Supabase Best Practices
+
+## 1. Client Usage
+
+### Server vs Browser Clients
+- **Server Components/Actions:** Use `createClient()` from `@/lib/supabase/server`
+- **Client Components:** Use `createClient()` from `@/lib/supabase/client`
+- **Never** import the wrong client for your context - it will break auth.
+
+### Creating Clients
+- Create a new client instance per request in Server Components - they are cheap.
+- In Client Components, use a context provider.
+
+## 2. Authentication
+
+### Auth Checks
+- **Always** use `supabase.auth.getUser()` for auth checks, never `getSession()`.
+- `getSession()` reads from cookies which can be tampered with - `getUser()` validates with the server.
+```typescript
+// Correct
+const { data: { user } } = await supabase.auth.getUser();
+if (!user) redirect('/login');
+
+// Wrong - insecure
+const { data: { session } } = await supabase.auth.getSession();
+```
+
+### Session Refresh
+- The middleware proxy (`lib/supabase/proxy.ts`) handles session refresh automatically.
+- Don't manually refresh tokens unless you have a specific need.
+
+## 3. Data Fetching
+
+### Use RLS (Row Level Security)
+- Always rely on RLS policies for authorization, not application code.
+- The authenticated user context is automatically passed to Postgres via the JWT.
+
+### Query Patterns
+- Use `.select()` to limit columns - don't fetch entire rows when you need 2 fields.
+- Use `.single()` when expecting one row, `.maybeSingle()` when row might not exist.
+```typescript
+// Good - explicit about expectations
+const { data } = await supabase
+  .from('profiles')
+  .select('id, username')
+  .eq('id', userId)
+  .single();
+
+// Bad - fetching everything, unclear expectations
+const { data } = await supabase.from('profiles').select('*');
+```
+
+### Error Handling
+- Always check for errors in Supabase responses:
+```typescript
+const { data, error } = await supabase.from('table').select();
+if (error) throw error;
+```
+
+## 4. Realtime
+- Only subscribe to realtime when actually needed - it consumes connections.
+- Always clean up subscriptions in useEffect cleanup or component unmount.
+- Use channel filters to limit data sent over the wire.
+
+## 5. Storage
+- Use signed URLs for private files, public URLs only for truly public assets.
+- Set appropriate cache headers when uploading.
+
+## 6. Performance
+- Use database functions for complex operations - RPC calls are faster than multiple queries.
+- Batch operations when possible using `.upsert()` with arrays.
+- Use `.range()` for pagination, never fetch all rows.

@@ -1,0 +1,102 @@
+[
+    {
+      "type": "tweet",
+      "id": "2011310119578141156",
+      "url": "https://x.com/nihaosam_/status/2011310119578141156",
+      "twitterUrl": "https://twitter.com/nihaosam_/status/2011310119578141156",
+      "text": "@tibo_maker @CodeWizard dm'd",
+      "source": "",
+      "retweetCount": 0,
+      "replyCount": 0,
+      "likeCount": 0,
+      "quoteCount": 0,
+      "viewCount": 0,
+      "createdAt": "Wed Jan 14 05:31:15 +0000 2026",
+      "lang": "und",
+      "bookmarkCount": 0,
+      "isReply": true,
+      "inReplyToId": "2010688549591347414",
+      "conversationId": "2010686898637840839",
+      "inReplyToUserId": null,
+      "inReplyToUsername": null,
+      "isPinned": false,
+      "author": {
+        "type": "user",
+        "userName": "nihaosam_",
+        "url": "https://x.com/nihaosam_",
+        "twitterUrl": "https://twitter.com/nihaosam_",
+        "id": "1637797037411278848",
+        "name": "sam waitathu",
+        "isVerified": false,
+        "isBlueVerified": false,
+        "profilePicture": "https://pbs.twimg.com/profile_images/2011289276626206720/joX7xU1I_normal.jpg",
+        "coverPicture": "https://pbs.twimg.com/profile_banners/1637797037411278848/1767024135",
+        "description": "Our mission is to bring AI home. Backed by Merge Club, SF\n\nThesis: Fun is a gateway to utility",
+        "location": "kenya",
+        "followers": 460,
+        "following": 2442,
+        "status": "",
+        "canDm": true,
+        "canMediaTag": false,
+        "createdAt": "Mon Mar 20 12:44:53 +0000 2023",
+        "entities": {
+          "description": {
+            "urls": []
+          },
+          "url": {}
+        },
+        "fastFollowersCount": 0,
+        "favouritesCount": 35589,
+        "hasCustomTimelines": true,
+        "isTranslator": false,
+        "mediaCount": 85,
+        "statusesCount": 3310,
+        "withheldInCountries": [],
+        "affiliatesHighlightedLabel": {},
+        "possiblySensitive": false,
+        "pinnedTweetIds": [
+          "1876345687958302725"
+        ],
+        "profile_bio": {
+          "description": "Our mission is to bring AI home. Backed by Merge Club, SF\n\nThesis: Fun is a gateway to utility"
+        },
+        "isAutomated": false,
+        "automatedBy": null
+      },
+      "extendedEntities": {},
+      "card": null,
+      "place": {},
+      "entities": {
+        "hashtags": [],
+        "symbols": [],
+        "timestamps": [],
+        "urls": [],
+        "user_mentions": [
+          {
+            "id_str": "470129898",
+            "name": "Tibo",
+            "screen_name": "tibo_maker",
+            "indices": [
+              0,
+              11
+            ]
+          },
+          {
+            "id_str": "221791566",
+            "name": "Luke",
+            "screen_name": "CodeWizard",
+            "indices": [
+              12,
+              23
+            ]
+          }
+        ]
+      },
+      "reply_to_user_results": null,
+      "quoted_tweet_results": null,
+      "quoted_tweet": null,
+      "retweeted_tweet": null,
+      "isConversationControlled": false,
+      "searchTermIndex": 0
+    }
+]

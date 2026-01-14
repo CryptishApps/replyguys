@@ -1,0 +1,62 @@
+---
+alwaysApply: true
+---
+# Next.js 16 Best Practices
+
+## 1. Server-First Thinking
+- **Default to Server Components** for 90% of UI - zero client-side JavaScript.
+- Push `use client` boundaries as far down the component tree as possible. Only the interactive "leaf" components should be Client Components.
+- Always ask: "Does this component need to be interactive?" If no, keep it as a Server Component.
+
+## 2. Rendering & Performance
+
+### Partial Prerendering (PPR)
+- Combine static and dynamic content in the same route.
+- The shell is served instantly from the edge while dynamic components stream in.
+- Wrap dynamic components (user-specific content, personalized sections) in `<Suspense>` boundaries.
+
+### Layout & State
+- Next.js 16 automatically deduplicates layouts when prefetching - no manual optimization needed.
+- Use the React 19 `<Activity>` component for background UI that needs to maintain state while hidden.
+
+## 3. Data Fetching
+
+### Avoid Waterfalls
+- **NEVER** let fetches wait for each other sequentially.
+- Use `Promise.all()` to fetch data in parallel:
+```typescript
+const [users, posts] = await Promise.all([
+  fetchUsers(),
+  fetchPosts()
+]);
+```
+
+### Caching Model
+- Use `cacheLife` profiles for clear intent:
+```typescript
+const data = await fetch('...', { next: { cacheLife: 'max' } });
+```
+- Use `updateTag()` for instant UI updates after mutations (faster than `revalidateTag()`).
+
+## 4. Components & Assets
+
+### Forms
+- Use `next/form` for all forms. It provides client-side navigation and works even before JS hydrates.
+
+### Fonts
+- Use `next/font` for all fonts - provides zero Layout Shift (CLS) and no external requests.
+
+### Images
+- Provide `blurDataURL` for hero images to improve perceived performance.
+- Default `minimumCacheTTL` is now 4 hours - good for high-traffic sites.
+
+### Metadata
+- Use the `Metadata` API in `layout.ts` for SEO and faster header processing.
+
+## 5. Middleware
+- Use **only** for auth and geo-routing.
+- Keep middleware minimal - it adds latency to every single request.
+- Never put heavy logic in middleware.
+
+## 6. Configuration
+- React Compiler is enabled (`reactCompiler: true`) - automatic memoization, no manual `useMemo`/`useCallback` needed.

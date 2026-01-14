@@ -1,0 +1,40 @@
+---
+alwaysApply: true
+---
+# Comment Guidelines
+
+## Philosophy
+- Comments explain **WHY**, not **WHAT** - the code shows what, comments explain intent.
+- Code should be self-documenting. Comments fill gaps where code can't speak for itself.
+- Fewer, higher-quality comments are better than many low-value comments.
+
+## Do
+- Explain non-obvious business logic or domain rules.
+- Document edge cases, workarounds, or "gotchas".
+- Reference tickets/issues for complex fixes: `// Fixes #123 - handle race condition`.
+- Keep comments to 1-2 lines. If you need more, the code may need refactoring.
+
+## Don't
+- State the obvious: `// increment counter` or `// return the result`.
+- Leave commented-out code - delete it (git has history).
+- Write decorative comment blocks, ASCII art, or section dividers.
+- Add JSDoc to every function - only where types aren't self-explanatory.
+- Write TODO comments without a plan to address them.
+
+## Examples
+
+```typescript
+// Bad - obvious
+const total = items.reduce((sum, item) => sum + item.price, 0); // calculate total
+
+// Good - explains why
+// Apply 10% discount for orders over $100 per business rule BR-42
+const discount = total > 100 ? total * 0.1 : 0;
+
+// Bad - stale/useless
+// const oldMethod = () => { ... }
+
+// Good - documents edge case
+// Supabase returns null for empty arrays, normalize to []
+const results = data ?? [];
+```

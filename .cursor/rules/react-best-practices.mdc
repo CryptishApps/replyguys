@@ -1,0 +1,22 @@
+---
+alwaysApply: true
+---
+# React Best Practices
+
+## 1. Avoid `useEffect`
+- **Avoid `useEffect` whenever possible.** Use derived state, event handlers, or server-side data fetching instead.
+- **Data Fetching:** Never use `useEffect` for data fetching. Fetch data in Server Components or use Supabase queries in event handlers.
+- **State Sync:** Avoid syncing props to state with `useEffect`. Use `key` to reset state or derive values during render.
+- **On Mount:** If you need to run code on mount, consider if it can be logic in an event handler or server function. If strictly necessary, use it sparingly.
+
+## 2. Components
+- Prefer **Uncontrolled Components** with `defaultValue` for simple forms to avoid unnecessary re-renders and state management.
+- Use **Composition** over complex prop drilling.
+
+## 3. Performance
+- With React Compiler enabled, manual `useMemo` and `useCallback` are no longer needed. The compiler handles memoization automatically.
+- Avoid premature optimization - the compiler optimizes re-renders for you.
+
+## 4. Forms
+- Use `next/form` for forms - provides client-side navigation and works before JS hydrates.
+- For complex validation, use native HTML5 validation attributes or Base UI form components.

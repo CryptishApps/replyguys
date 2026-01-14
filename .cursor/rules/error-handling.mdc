@@ -1,0 +1,54 @@
+---
+description: When adding in error handling logic
+alwaysApply: false
+---
+# Rule: Error Handling (Supabase & Next.js)
+
+## Core Philosophy
+Differentiate between **Expected Failures** (Business Logic) and **Unexpected Crashes** (Bugs).
+- **Business Logic** (e.g., "Not enough credits", "Unauthorized"): Handle gracefully with user feedback.
+- **Unexpected Bugs** (e.g., "Cannot read property of undefined"): Let them propagate to error boundaries.
+
+## 1. Supabase Query Errors
+Always destructure and check errors from Supabase responses:
+```typescript
+const { data, error } = await supabase.from('table').select();
+
+if (error) {
+  // Log for debugging, don't expose raw error to user
+  console.error('Supabase error:', error.message);
+  throw new Error('Failed to load data');
+}
+```
+
+## 2. Server Actions
+Use a consistent pattern for Server Action responses:
+```typescript
+type ActionResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: string };
+
+export async function myAction(): Promise<ActionResult<Data>> {
+  const { data, error } = await supabase.from('table').select();
+
+  if (error) {
+    return { success: false, error: 'Failed to load data' };
+  }
+
+  return { success: true, data };
+}
+```
+
+## 3. Error Boundaries
+- Use Next.js `error.tsx` files for route-level error handling.
+- Keep error UI simple and actionable (retry button, go home link).
+- Log errors server-side, show friendly messages client-side.
+
+## 4. Auth Errors
+- Redirect to login on 401/unauthorized errors.
+- Never expose "user not found" vs "wrong password" - just say "invalid credentials".
+
+## 5. Form Validation
+- Validate on client first (immediate feedback).
+- Always re-validate on server (never trust client).
+- Return field-specific errors for form fields.

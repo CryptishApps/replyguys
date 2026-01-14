@@ -1,36 +1,221 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+<div align="center">
 
-## Getting Started
+# 🎯 ReplyGuys
 
-First, run the development server:
+**Turn X/Twitter replies into actionable audience intelligence.**
+
+[![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)](https://nextjs.org)
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react)](https://react.dev)
+[![Supabase](https://img.shields.io/badge/Supabase-Postgres-3FCF8E?style=flat-square&logo=supabase)](https://supabase.com)
+[![Inngest](https://img.shields.io/badge/Inngest-Workflows-5D5FEF?style=flat-square)](https://inngest.com)
+[![Tailwind](https://img.shields.io/badge/Tailwind-4-38B2AC?style=flat-square&logo=tailwind-css)](https://tailwindcss.com)
+
+---
+
+**ReplyGuys** is an audience-intelligence engine that scrapes replies to your X posts and transforms them into data-driven insights. Built with the modern 2026 stack.
+
+[Getting Started](#-getting-started) • [Environment Variables](#-environment-variables) • [Local Development](#-local-development) • [Tech Stack](#-tech-stack)
+
+</div>
+
+---
+
+## ✨ Features
+
+- 🔍 **Smart Reply Scraping** — Automatically collect and process replies from any X post
+- 🤖 **AI-Powered Evaluation** — Grade replies for relevance, quality, and sentiment
+- 📊 **Real-time Dashboard** — Watch replies being processed live with Supabase Realtime
+- 🎨 **Beautiful Reports** — Visual summaries with leaderboards and top insights
+- 🔐 **Secure OAuth** — X/Twitter OAuth 2.0 authentication
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- [Bun](https://bun.sh) or Node.js 20+
+- [Supabase CLI](https://supabase.com/docs/guides/cli)
+- [Inngest Dev Server](https://www.inngest.com/docs/local-development)
+
+### Installation
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
+# Clone the repository
+git clone https://github.com/your-username/replyguys.git
+cd replyguys
+
+# Install dependencies
+bun install
+
+# Copy environment variables
+cp env.example .env.local
+
+# Start the development server
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🔑 Environment Variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Create a `.env.local` file with the following variables:
 
-## Learn More
+| Variable | Description |
+|----------|-------------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase anon/public key |
+| `SUPABASE_SECRET_KEY` | Supabase service role key (server-side only) |
+| `NEXT_PUBLIC_APP_URL` | Your app URL (for OAuth callbacks) |
+| `X_CLIENT_ID` | X/Twitter OAuth 2.0 Client ID |
+| `X_CLIENT_SECRET` | X/Twitter OAuth 2.0 Client Secret |
+| `APIFY_TOKEN` | Apify API token for scraping |
+| `INNGEST_EVENT_KEY` | Inngest event key |
+| `INNGEST_SIGNING_KEY` | Inngest signing key |
 
-To learn more about Next.js, take a look at the following resources:
+<details>
+<summary><strong>Example .env.local</strong></summary>
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```env
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6...
+SUPABASE_SECRET_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6...
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# App URL (for OAuth callbacks)
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 
-## Deploy on Vercel
+# X (Twitter) OAuth 2.0
+X_CLIENT_ID=your_x_client_id
+X_CLIENT_SECRET=your_x_client_secret
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# Apify (Scraping)
+APIFY_TOKEN=your_apify_token
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+# Inngest
+INNGEST_EVENT_KEY=your_inngest_event_key
+INNGEST_SIGNING_KEY=your_inngest_signing_key
+```
+
+</details>
+
+---
+
+## 🛠️ Local Development
+
+### Supabase Setup
+
+1. **Install the Supabase CLI**
+
+   ```bash
+   brew install supabase/tap/supabase
+   ```
+
+2. **Start Supabase locally**
+
+   ```bash
+   supabase start
+   ```
+
+   This spins up a local Postgres database, Auth, and Realtime server. The CLI will output your local credentials:
+
+   ```
+   API URL: http://127.0.0.1:54321
+   anon key: eyJhbGci...
+   service_role key: eyJhbGci...
+   ```
+
+3. **Run migrations**
+
+   ```bash
+   supabase db reset
+   ```
+
+   This applies all migrations from `supabase/migrations/` and seeds the database.
+
+4. **Access Supabase Studio**
+
+   Open [http://127.0.0.1:54323](http://127.0.0.1:54323) to view your local database in the Supabase dashboard.
+
+---
+
+### Inngest Setup
+
+[Inngest](https://inngest.com) handles our background jobs and event-driven workflows.
+
+1. **Install the Inngest Dev Server**
+
+   ```bash
+   npx inngest-cli@latest dev
+   ```
+
+   Or install globally:
+
+   ```bash
+   npm install -g inngest-cli
+   inngest dev
+   ```
+
+2. **The Dev Server UI**
+
+   Open [http://127.0.0.1:8288](http://127.0.0.1:8288) to access the Inngest dashboard where you can:
+
+   - View all registered functions
+   - Trigger events manually
+   - Monitor function runs and logs
+   - Debug failed jobs
+
+3. **Connect to your app**
+
+   The Inngest Dev Server automatically discovers functions at `/api/inngest`. Make sure your Next.js app is running on `localhost:3000`.
+
+4. **For production**
+
+   Sign up at [inngest.com](https://inngest.com) and add your `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` to your environment.
+
+---
+
+## 🏗️ Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Framework** | Next.js 16 (App Router) |
+| **UI** | React 19, Tailwind CSS 4, shadcn/ui |
+| **Database** | Supabase (Postgres) + Realtime |
+| **Auth** | Supabase Auth + X OAuth 2.0 |
+| **Background Jobs** | Inngest |
+| **Scraping** | Apify |
+| **Animations** | Framer Motion |
+
+---
+
+## 📁 Project Structure
+
+```
+├── app/
+│   ├── (auth)/          # Authentication routes
+│   ├── (dashboard)/     # Protected dashboard routes
+│   └── api/             # API routes (auth, inngest)
+├── components/
+│   └── ui/              # shadcn/ui components
+├── hooks/               # React hooks
+├── lib/
+│   ├── inngest/         # Inngest functions & client
+│   └── supabase/        # Supabase clients (server/client)
+└── supabase/
+    └── migrations/      # Database migrations
+```
+
+---
+
+## 📜 License
+
+MIT
+
+---
+
+<div align="center">
+
+**Built with ☕ and modern tooling**
+
+</div>
