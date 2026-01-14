@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 interface ReportStatsProps {
     totalReplies: number;
     usefulReplies: number;
+    qualifiedReplies: number;
     threshold: number;
     status: "setting_up" | "pending" | "scraping" | "completed" | "failed";
 }
@@ -13,10 +14,11 @@ interface ReportStatsProps {
 export function ReportStats({
     totalReplies,
     usefulReplies,
+    qualifiedReplies,
     threshold,
     status,
 }: ReportStatsProps) {
-    const progress = threshold > 0 ? usefulReplies / threshold : 0;
+    const progress = threshold > 0 ? qualifiedReplies / threshold : 0;
     const isActive = status === "scraping" || status === "pending" || status === "setting_up";
 
     return (
@@ -37,14 +39,14 @@ export function ReportStats({
                 />
             </div>
 
-            {/* Useful Replies */}
+            {/* Qualified Replies */}
             <div className="flex flex-col gap-1 p-4 border rounded-lg">
                 <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Useful Replies
+                    Qualified Replies
                 </span>
                 <div className="flex items-baseline gap-2">
                     <NumberFlow
-                        value={usefulReplies}
+                        value={qualifiedReplies}
                         className="text-2xl font-semibold tabular-nums"
                     />
                     <span className="text-sm text-muted-foreground">

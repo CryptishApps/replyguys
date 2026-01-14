@@ -27,7 +27,7 @@ export default async function ReportPage({ params }: PageProps) {
             .select(`
                 id, x_post_url, conversation_id, status, reply_count, created_at,
                 original_tweet_text, original_author_username, original_author_avatar,
-                reply_threshold, useful_count, title
+                reply_threshold, useful_count, qualified_count, title, summary, summary_status
             `)
             .eq("id", id)
             .eq("user_id", user.id)
@@ -40,6 +40,12 @@ export default async function ReportPage({ params }: PageProps) {
     ]);
 
     if (reportResult.error || !reportResult.data) {
+        console.error("[report-page] Failed to load report:", {
+            reportId: id,
+            userId: user.id,
+            error: reportResult.error?.message,
+            hasData: !!reportResult.data,
+        });
         notFound();
     }
 
@@ -76,10 +82,13 @@ export default async function ReportPage({ params }: PageProps) {
                     reply_count: report.reply_count,
                     reply_threshold: report.reply_threshold,
                     useful_count: report.useful_count,
+                    qualified_count: report.qualified_count ?? 0,
                     original_tweet_text: report.original_tweet_text,
                     original_author_username: report.original_author_username,
                     original_author_avatar: report.original_author_avatar,
                     title: report.title,
+                    summary: report.summary,
+                    summary_status: report.summary_status ?? "pending",
                 }}
                 initialReplies={replies}
             />

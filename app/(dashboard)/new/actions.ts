@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { inngest } from "@/lib/inngest/client";
+import { WEIGHT_PRESETS, type Weights } from "@/lib/ai/schemas";
 
 type ActionResult =
     | { success: true; reportId: string }
@@ -16,6 +17,30 @@ function extractConversationId(url: string): string | null {
     return match ? match[1] : null;
 }
 
+function parseWeights(weightsStr: string | null, preset: string): Weights {
+    // If valid preset, use preset weights
+    if (preset && preset !== "custom" && preset in WEIGHT_PRESETS) {
+        return WEIGHT_PRESETS[preset as keyof typeof WEIGHT_PRESETS];
+    }
+
+    // Try to parse custom weights
+    if (weightsStr) {
+        try {
+            const parsed = JSON.parse(weightsStr);
+            return {
+                actionability: Math.min(100, Math.max(0, parsed.actionability ?? 25)),
+                specificity: Math.min(100, Math.max(0, parsed.specificity ?? 25)),
+                originality: Math.min(100, Math.max(0, parsed.originality ?? 25)),
+                constructiveness: Math.min(100, Math.max(0, parsed.constructiveness ?? 25)),
+            };
+        } catch {
+            // Fall through to default
+        }
+    }
+
+    return WEIGHT_PRESETS.balanced;
+}
+
 export async function createReport(formData: FormData): Promise<ActionResult> {
     const url = formData.get("url") as string;
 
@@ -27,6 +52,21 @@ export async function createReport(formData: FormData): Promise<ActionResult> {
     if (!conversationId) {
         return { success: false, error: "Invalid X post URL" };
     }
+
+    // Parse goal (required)
+    const goal = (formData.get("goal") as string)?.trim();
+    if (!goal) {
+        return { success: false, error: "Goal is required" };
+    }
+
+    // Parse persona (optional)
+    const personaRaw = formData.get("persona") as string;
+    const persona = personaRaw?.trim() || null;
+
+    // Parse preset and weights
+    const preset = (formData.get("preset") as string) || "balanced";
+    const weightsStr = formData.get("weights") as string;
+    const weights = parseWeights(weightsStr, preset);
 
     // Parse form fields with validation
     const replyThresholdRaw = parseInt(formData.get("replyThreshold") as string);
@@ -67,6 +107,12 @@ export async function createReport(formData: FormData): Promise<ActionResult> {
             blue_only: blueOnly,
             min_followers: minFollowers,
             useful_count: 0,
+            qualified_count: 0,
+            goal,
+            persona,
+            preset,
+            weights,
+            summary_status: "pending",
         })
         .select("id")
         .single();

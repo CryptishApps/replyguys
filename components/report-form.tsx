@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState, useCallback } from "react";
 import { createReport } from "@/app/(dashboard)/new/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldLabel, FieldDescription } from "@/components/ui/field";
 import {
@@ -12,13 +13,42 @@ import {
     AccordionItem,
     AccordionTrigger,
 } from "@/components/ui/accordion";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { IconLoader2, IconSettings } from "@tabler/icons-react";
+import { WeightSliders } from "@/components/weight-sliders";
+import { IconLoader2, IconSettings, IconAdjustments } from "@tabler/icons-react";
+import { WEIGHT_PRESETS, type PresetName, type Weights } from "@/lib/ai/schemas";
+
+type PresetOption = PresetName | "custom";
+
+const PRESET_OPTIONS: { value: PresetOption; label: string; description: string }[] = [
+    { value: "balanced", label: "Balanced", description: "Equal weight to all metrics" },
+    { value: "research", label: "Research", description: "Focus on actionable specifics" },
+    { value: "ideas", label: "Ideas", description: "Prioritize original thinking" },
+    { value: "feedback", label: "Feedback", description: "Constructive and actionable" },
+    { value: "custom", label: "Custom", description: "Configure your own weights" },
+];
 
 export function ReportForm() {
+    const [preset, setPreset] = useState<PresetOption>("balanced");
+    const [weights, setWeights] = useState<Weights>(WEIGHT_PRESETS.balanced);
+
+    const handleWeightsChange = useCallback((newWeights: Weights) => {
+        setWeights(newWeights);
+    }, []);
+
     const [state, formAction, isPending] = useActionState(
         async (_: unknown, formData: FormData) => {
+            // Add weights to form data
+            formData.set("weights", JSON.stringify(weights));
+            formData.set("preset", preset);
             return createReport(formData);
         },
         null
@@ -50,6 +80,35 @@ export function ReportForm() {
                     </Field>
 
                     <Field>
+                        <FieldLabel htmlFor="goal">Goal</FieldLabel>
+                        <Textarea
+                            id="goal"
+                            name="goal"
+                            placeholder="What do you want to learn from these replies? e.g., 'Understand what features users want most' or 'Find common pain points with the current product'"
+                            required
+                            disabled={isPending}
+                            className="min-h-20"
+                        />
+                        <FieldDescription>
+                            This helps the AI understand what insights matter most to you
+                        </FieldDescription>
+                    </Field>
+
+                    <Field>
+                        <FieldLabel htmlFor="persona">Target Audience (optional)</FieldLabel>
+                        <Input
+                            id="persona"
+                            name="persona"
+                            type="text"
+                            placeholder="e.g., SaaS founders, indie hackers, marketers"
+                            disabled={isPending}
+                        />
+                        <FieldDescription>
+                            Who are you trying to reach? This helps prioritize relevant feedback
+                        </FieldDescription>
+                    </Field>
+
+                    <Field>
                         <FieldLabel htmlFor="replyThreshold">Reply Threshold</FieldLabel>
                         <Input
                             id="replyThreshold"
@@ -61,11 +120,55 @@ export function ReportForm() {
                             disabled={isPending}
                         />
                         <FieldDescription>
-                            Number of useful replies to collect (max 250)
+                            Number of qualified replies to collect before generating summary (max 250)
                         </FieldDescription>
                     </Field>
 
-                    <Accordion type="single" collapsible className="w-full">
+                    <Accordion type="multiple" className="w-full">
+                        <AccordionItem value="weights" className="border-none">
+                            <AccordionTrigger className="text-sm py-2 hover:no-underline">
+                                <span className="flex items-center gap-2 text-muted-foreground">
+                                    <IconAdjustments className="size-4" />
+                                    Evaluation Weights
+                                </span>
+                            </AccordionTrigger>
+                            <AccordionContent className="space-y-4 pt-2">
+                                <Field>
+                                    <FieldLabel htmlFor="preset">Preset</FieldLabel>
+                                    <Select
+                                        value={preset}
+                                        onValueChange={(value) => setPreset(value as PresetOption)}
+                                        disabled={isPending}
+                                    >
+                                        <SelectTrigger className="w-full">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {PRESET_OPTIONS.map((option) => (
+                                                <SelectItem key={option.value} value={option.value}>
+                                                    <div className="flex flex-col">
+                                                        <span>{option.label}</span>
+                                                        <span className="text-xs text-muted-foreground">
+                                                            {option.description}
+                                                        </span>
+                                                    </div>
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <FieldDescription>
+                                        Choose how replies are scored and ranked
+                                    </FieldDescription>
+                                </Field>
+
+                                <WeightSliders
+                                    preset={preset}
+                                    onWeightsChange={handleWeightsChange}
+                                    disabled={isPending}
+                                />
+                            </AccordionContent>
+                        </AccordionItem>
+
                         <AccordionItem value="advanced" className="border-none">
                             <AccordionTrigger className="text-sm py-2 hover:no-underline">
                                 <span className="flex items-center gap-2 text-muted-foreground">

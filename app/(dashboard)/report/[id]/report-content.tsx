@@ -1,13 +1,17 @@
 "use client";
 
+import { useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useReportRealtime, ReportData, Reply } from "@/hooks/use-report-realtime";
 import { ReplyCard } from "@/components/reply-card";
 import { ReportStats } from "@/components/report-stats";
+import { ReportSummary } from "@/components/report-summary";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { IconLoader2 } from "@tabler/icons-react";
+import type { ReportSummary as ReportSummaryType } from "@/lib/ai/schemas";
+import { generateSummary } from "./actions";
 
 interface ReportContentProps {
     reportId: string;
@@ -65,11 +69,20 @@ export function ReportContent({
     initialReport,
     initialReplies,
 }: ReportContentProps) {
-    const { report, replies } = useReportRealtime({
+    const { report, replies, refresh } = useReportRealtime({
         reportId,
         initialReport,
         initialReplies,
     });
+
+    const handleGenerateSummary = useCallback(async () => {
+        const result = await generateSummary(reportId);
+        if (result.success) {
+            // Refresh to get the updated summary_status
+            refresh();
+        }
+        return result;
+    }, [reportId, refresh]);
 
     const status = statusConfig[report.status];
     const isLoading = report.status === "setting_up" || report.status === "pending" || report.status === "scraping";
@@ -128,9 +141,20 @@ export function ReportContent({
             <ReportStats
                 totalReplies={report.reply_count}
                 usefulReplies={report.useful_count}
+                qualifiedReplies={report.qualified_count}
                 threshold={report.reply_threshold}
                 status={report.status}
             />
+
+            {/* AI Summary Section */}
+            {(report.summary_status !== "pending" || report.status === "completed" || report.qualified_count > 0) && (
+                <ReportSummary
+                    summary={report.summary as ReportSummaryType}
+                    summaryStatus={report.summary_status}
+                    qualifiedCount={report.qualified_count}
+                    onGenerateSummary={handleGenerateSummary}
+                />
+            )}
 
             {/* Replies Card */}
             <Card>

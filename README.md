@@ -23,9 +23,11 @@
 ## ✨ Features
 
 - 🔍 **Smart Reply Scraping** — Automatically collect and process replies from any X post
-- 🤖 **AI-Powered Evaluation** — Grade replies for relevance, quality, and sentiment
+- 🤖 **AI-Powered Evaluation** — Gemini 2.0 Flash scores each reply on actionability, specificity, originality, and constructiveness
 - 📊 **Real-time Dashboard** — Watch replies being processed live with Supabase Realtime
-- 🎨 **Beautiful Reports** — Visual summaries with leaderboards and top insights
+- 🎨 **AI-Generated Summaries** — Gemini 3 Pro generates executive summaries, key themes, action items, and hidden gems
+- 🎯 **Goal-Driven Analysis** — Define your research goal and target audience to get relevant insights
+- ⚖️ **Customizable Weights** — Choose from presets (balanced, research, ideas, feedback) or customize scoring weights
 - 🔐 **Secure OAuth** — X/Twitter OAuth 2.0 authentication
 
 ---
@@ -70,6 +72,7 @@ Create a `.env.local` file with the following variables:
 | `X_CLIENT_ID` | X/Twitter OAuth 2.0 Client ID |
 | `X_CLIENT_SECRET` | X/Twitter OAuth 2.0 Client Secret |
 | `APIFY_TOKEN` | Apify API token for scraping |
+| `GEMINI_API_KEY` | Google AI Gemini API key |
 | `INNGEST_EVENT_KEY` | Inngest event key |
 | `INNGEST_SIGNING_KEY` | Inngest signing key |
 
@@ -91,6 +94,9 @@ X_CLIENT_SECRET=your_x_client_secret
 
 # Apify (Scraping)
 APIFY_TOKEN=your_apify_token
+
+# Google AI (Gemini)
+GEMINI_API_KEY=your_gemini_api_key
 
 # Inngest
 INNGEST_EVENT_KEY=your_inngest_event_key
@@ -183,6 +189,7 @@ INNGEST_SIGNING_KEY=your_inngest_signing_key
 | **UI** | React 19, Tailwind CSS 4, shadcn/ui |
 | **Database** | Supabase (Postgres) + Realtime |
 | **Auth** | Supabase Auth + X OAuth 2.0 |
+| **AI** | Google Gemini (2.0 Flash + 3 Pro) via Vercel AI SDK |
 | **Background Jobs** | Inngest |
 | **Scraping** | Apify |
 | **Animations** | Framer Motion |
@@ -200,6 +207,7 @@ INNGEST_SIGNING_KEY=your_inngest_signing_key
 │   └── ui/              # shadcn/ui components
 ├── hooks/               # React hooks
 ├── lib/
+│   ├── ai/              # Gemini AI evaluation & summary
 │   ├── inngest/         # Inngest functions & client
 │   └── supabase/        # Supabase clients (server/client)
 └── supabase/

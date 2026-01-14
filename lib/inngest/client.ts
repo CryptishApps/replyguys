@@ -21,6 +21,11 @@ type Events = {
             minLength: number;
         };
     };
+    "report.generate-summary": {
+        data: {
+            reportId: string;
+        };
+    };
 };
 
 export const inngest = new Inngest({

@@ -10,10 +10,13 @@ export interface ReportData {
     reply_count: number;
     reply_threshold: number;
     useful_count: number;
+    qualified_count: number;
     original_tweet_text: string | null;
     original_author_username: string | null;
     original_author_avatar: string | null;
     title: string | null;
+    summary: unknown | null;
+    summary_status: "pending" | "generating" | "completed" | "failed";
 }
 
 export interface Reply {
@@ -63,7 +66,7 @@ export function useReportRealtime({
         const [reportResult, repliesResult] = await Promise.all([
             supabase
                 .from("reports")
-                .select("id, status, reply_count, reply_threshold, useful_count, original_tweet_text, original_author_username, original_author_avatar, title")
+                .select("id, status, reply_count, reply_threshold, useful_count, qualified_count, original_tweet_text, original_author_username, original_author_avatar, title, summary, summary_status")
                 .eq("id", reportId)
                 .single(),
             supabase

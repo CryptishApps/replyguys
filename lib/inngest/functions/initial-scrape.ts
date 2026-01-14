@@ -78,7 +78,7 @@ export const initialScrapeFunction = inngest.createFunction(
             return result;
         });
 
-        // Step 3: Store original post data and generate title (if found)
+        // Step 3: Store original post data (if found)
         if (scrapeResult.originalTweet) {
             await step.run("store-original-post", async () => {
                 const tweet = scrapeResult.originalTweet!;
@@ -87,17 +87,12 @@ export const initialScrapeFunction = inngest.createFunction(
                     textLength: tweet.text.length,
                 });
 
-                // Generate a short title using Gemini Flash
-                const title = await generateReportTitle(tweet.text);
-                log("store-original", "Generated title", { title });
-
                 const { error } = await supabase
                     .from("reports")
                     .update({
                         original_tweet_text: tweet.text,
                         original_author_username: tweet.author.userName,
                         original_author_avatar: tweet.author.profilePicture,
-                        title: title,
                     })
                     .eq("id", reportId);
 
@@ -107,6 +102,31 @@ export const initialScrapeFunction = inngest.createFunction(
                 }
 
                 log("store-original", "Original tweet stored successfully");
+            });
+
+            // Step 3b: Generate and store title (separate step, non-blocking)
+            await step.run("generate-title", async () => {
+                const tweet = scrapeResult.originalTweet!;
+                const title = await generateReportTitle(tweet.text);
+
+                if (!title) {
+                    log("generate-title", "No title generated, skipping");
+                    return;
+                }
+
+                log("generate-title", "Generated title", { title });
+
+                const { error } = await supabase
+                    .from("reports")
+                    .update({ title })
+                    .eq("id", reportId);
+
+                if (error) {
+                    // Don't throw - title is nice-to-have, not critical
+                    log("generate-title", "Failed to store title (non-fatal)", { error: error.message });
+                } else {
+                    log("generate-title", "Title stored successfully");
+                }
             });
         } else {
             log("scrape", "No original tweet found - may be filtered by blue_only or other settings");
