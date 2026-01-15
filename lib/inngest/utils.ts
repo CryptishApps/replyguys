@@ -104,40 +104,53 @@ export function mapToReplyRecords(replies: ScrapedTweet[], reportId: string) {
 }
 
 /**
- * Gets the most recent reply date from a list of replies.
- * Used for 24-hour timeout logic.
+ * Gets the newest reply date from a batch.
+ * Only returns if NEWER than the previous value (for forward pagination).
  */
-export function getLatestReplyDate(
+export function getNewestReplyDate(
     replies: ScrapedTweet[],
-    fallback: string | null = null
+    previousNewest: string | null = null
 ): string | null {
-    if (replies.length === 0) return fallback;
+    if (replies.length === 0) return previousNewest;
 
-    const sortedByDate = [...replies].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    const previousTime = previousNewest ? new Date(previousNewest).getTime() : 0;
+    let maxTime = previousTime;
+    let maxDate = previousNewest;
 
-    return sortedByDate[0]?.createdAt ?? fallback;
+    for (const reply of replies) {
+        const time = new Date(reply.createdAt).getTime();
+        if (time > maxTime) {
+            maxTime = time;
+            maxDate = reply.createdAt;
+        }
+    }
+
+    return maxDate;
 }
 
 /**
- * Gets the highest reply ID from a list of replies.
- * Used for pagination with since_id filter.
+ * Gets the oldest reply date from a batch.
+ * Only returns if OLDER than the previous value (for backwards pagination).
  */
-export function getLatestReplyId(
+export function getOldestReplyDate(
     replies: ScrapedTweet[],
-    fallback: string | null = null
+    previousOldest: string | null = null
 ): string | null {
-    if (replies.length === 0) return fallback;
+    if (replies.length === 0) return previousOldest;
 
-    // Tweet IDs are snowflake IDs - higher = newer
-    // Compare as BigInt for accuracy with large IDs
-    const maxId = replies.reduce((max, reply) => {
-        const replyId = BigInt(reply.id);
-        return replyId > max ? replyId : max;
-    }, BigInt(0));
+    const previousTime = previousOldest ? new Date(previousOldest).getTime() : Infinity;
+    let minTime = previousTime;
+    let minDate = previousOldest;
 
-    return maxId > 0 ? maxId.toString() : fallback;
+    for (const reply of replies) {
+        const time = new Date(reply.createdAt).getTime();
+        if (time < minTime) {
+            minTime = time;
+            minDate = reply.createdAt;
+        }
+    }
+
+    return minDate;
 }
 
 // ============================================================================
@@ -150,14 +163,16 @@ export interface ReportSettings {
     min_followers: number | null;
     blue_only: boolean;
     useful_count: number;
-    last_reply_date?: string | null;
-    last_reply_id?: string | null;
+    last_reply_date?: string | null; // For 24hr timeout logic
+    oldest_reply_date?: string | null; // For backwards pagination (Phase 1)
+    newest_reply_date?: string | null; // For forward pagination (Phase 2)
+    scrape_phase?: "backwards" | "forward"; // Current scrape phase
 }
 
 export interface FilterAndInsertResult {
     inserted: number;
-    lastReplyDate: string | null;
-    lastReplyId: string | null;
+    oldestReplyDate: string | null; // Oldest in batch - for backwards pagination
+    newestReplyDate: string | null; // Newest in batch - for forward pagination
     insertedReplies: ScrapedTweet[];
 }
 
@@ -183,8 +198,8 @@ export async function filterAndInsertReplies(
         );
         return {
             inserted: 0,
-            lastReplyDate: settings.last_reply_date ?? null,
-            lastReplyId: settings.last_reply_id ?? null,
+            oldestReplyDate: settings.oldest_reply_date ?? null,
+            newestReplyDate: settings.newest_reply_date ?? null,
             insertedReplies: [],
         };
     }
@@ -227,12 +242,23 @@ export async function filterAndInsertReplies(
         );
     }
 
-    // Track pagination: use ALL replies (not just filtered) for cursor position
-    const lastReplyDate = getLatestReplyDate(replies, settings.last_reply_date ?? null);
-    const lastReplyId = getLatestReplyId(replies, settings.last_reply_id ?? null);
+    // Track both dates for pagination:
+    // - oldestReplyDate: Only update if OLDER than previous (backwards pagination)
+    // - newestReplyDate: Only update if NEWER than previous (forward pagination)
+    const oldestReplyDate = getOldestReplyDate(replies, settings.oldest_reply_date ?? null);
+    const newestReplyDate = getNewestReplyDate(replies, settings.newest_reply_date ?? null);
+
+    // Debug: log date range of batch
+    if (replies.length > 0) {
+        const dates = replies.map(r => new Date(r.createdAt).getTime()).sort((a, b) => a - b);
+        const oldestDateStr = new Date(dates[0]).toISOString();
+        const newestDateStr = new Date(dates[dates.length - 1]).toISOString();
+        log?.("pagination", `Batch: ${oldestDateStr} → ${newestDateStr}`);
+        log?.("pagination", `Cursors: oldest=${oldestReplyDate}, newest=${newestReplyDate}`);
+    }
 
     if (filteredReplies.length === 0) {
-        return { inserted: 0, lastReplyDate, lastReplyId, insertedReplies: [] };
+        return { inserted: 0, oldestReplyDate, newestReplyDate, insertedReplies: [] };
     }
 
     // Check which replies already exist IN THIS REPORT to get accurate "new" count
@@ -260,7 +286,7 @@ export async function filterAndInsertReplies(
 
     if (uniqueNewReplies.length === 0) {
         log("filter", "No new replies to insert");
-        return { inserted: 0, lastReplyDate, lastReplyId, insertedReplies: [] };
+        return { inserted: 0, oldestReplyDate, newestReplyDate, insertedReplies: [] };
     }
 
     const replyRecords = mapToReplyRecords(uniqueNewReplies, reportId);
@@ -296,7 +322,7 @@ export async function filterAndInsertReplies(
         log
     );
 
-    return { inserted: uniqueNewReplies.length, lastReplyDate, lastReplyId, insertedReplies: uniqueNewReplies };
+    return { inserted: uniqueNewReplies.length, oldestReplyDate, newestReplyDate, insertedReplies: uniqueNewReplies };
 }
 
 /**
@@ -307,24 +333,40 @@ export async function filterAndInsertReplies(
 export async function updateReportProgress(
     supabase: SupabaseClient,
     reportId: string,
-    newUsefulCount: number,
-    lastReplyDate: string | null,
-    lastReplyId: string | null,
+    updates: {
+        usefulCount: number;
+        oldestReplyDate: string | null;
+        newestReplyDate: string | null;
+        scrapePhase?: "backwards" | "forward";
+    },
     log: LogFn
 ): Promise<void> {
-    log("progress", `Updating progress: ${newUsefulCount} scraped`, {
-        lastReplyId,
+    log("progress", `Updating progress: ${updates.usefulCount} scraped`, {
+        oldestReplyDate: updates.oldestReplyDate,
+        newestReplyDate: updates.newestReplyDate,
+        scrapePhase: updates.scrapePhase,
     });
+
+    const updateData: Record<string, unknown> = {
+        status: "scraping",
+        useful_count: updates.usefulCount,
+        reply_count: updates.usefulCount,
+        oldest_reply_date: updates.oldestReplyDate,
+        newest_reply_date: updates.newestReplyDate,
+    };
+
+    // Also update last_reply_date with newest for 24hr timeout logic
+    if (updates.newestReplyDate) {
+        updateData.last_reply_date = updates.newestReplyDate;
+    }
+
+    if (updates.scrapePhase) {
+        updateData.scrape_phase = updates.scrapePhase;
+    }
 
     const { error } = await supabase
         .from("reports")
-        .update({
-            status: "scraping",
-            useful_count: newUsefulCount,
-            reply_count: newUsefulCount,
-            last_reply_date: lastReplyDate,
-            last_reply_id: lastReplyId,
-        })
+        .update(updateData)
         .eq("id", reportId);
 
     if (error) {
@@ -332,14 +374,14 @@ export async function updateReportProgress(
         throw new Error(`Failed to update report progress: ${error.message}`);
     }
 
-    log("progress", `Progress updated, status remains: scraping`);
+    log("progress", `Progress updated, phase: ${updates.scrapePhase ?? "unchanged"}`);
     await logReportActivity(
         supabase,
         {
             report_id: reportId,
             key: "progress",
             message: `Updated report counts`,
-            meta: { usefulCount: newUsefulCount },
+            meta: { usefulCount: updates.usefulCount },
         },
         log
     );

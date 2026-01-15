@@ -31,9 +31,10 @@ export interface OriginalTweet {
 }
 
 export interface ScrapeOptions {
-    sort?: "Latest" | "Oldest" | "Top";
+    sortOrder?: "recency" | "relevancy";
     maxItems?: number;
-    sinceId?: string;
+    untilTime?: number; // Unix timestamp - get tweets BEFORE this time (backwards pagination)
+    sinceTime?: number; // Unix timestamp - get tweets AFTER this time (forward pagination)
     blueOnly?: boolean;
     minFollowers?: number;
     includeOriginalTweet?: boolean;
@@ -165,18 +166,22 @@ const EXCLUDED_BOTS = ["grok"];
 
 /**
  * Fetches replies to a conversation using conversation_id: search.
+ * Supports two pagination modes:
+ * - Backwards (until_time): Get tweets BEFORE a timestamp
+ * - Forward (since_time): Get tweets AFTER a timestamp (may not work for all searches)
  */
 async function fetchReplies(
     client: ApifyClient,
     conversationId: string,
     options: {
-        sort: "Latest" | "Oldest" | "Top";
+        sortOrder: "recency" | "relevancy";
         maxItems: number;
-        sinceId?: string;
+        untilTime?: number; // Get tweets BEFORE this time (backwards)
+        sinceTime?: number; // Get tweets AFTER this time (forward)
         minFollowers?: number;
     }
 ): Promise<ScrapedTweet[]> {
-    const { sort, maxItems, sinceId, minFollowers } = options;
+    const { sortOrder, maxItems, untilTime, sinceTime, minFollowers } = options;
 
     // Build search query - filter to replies only and exclude bots
     let searchQuery = `conversation_id:${conversationId} filter:replies`;
@@ -186,20 +191,24 @@ async function fetchReplies(
         searchQuery += ` -from:${bot}`;
     }
 
-    // Use since_id for precise pagination (returns tweets with ID > sinceId)
-    if (sinceId) {
-        searchQuery += ` since_id:${sinceId}`;
-    }
     if (minFollowers) {
         searchQuery += ` min_followers:${minFollowers}`;
     }
 
-    log("Fetching replies", { query: searchQuery, maxItems, sort, sinceId });
+    // Add time filters to query string
+    if (untilTime) {
+        searchQuery += ` until_time:${untilTime}`;
+    }
+    if (sinceTime) {
+        searchQuery += ` since_time:${sinceTime}`;
+    }
 
-    const input = {
+    log("Fetching replies", { query: searchQuery, maxItems, sortOrder, untilTime, sinceTime });
+
+    const input: Record<string, unknown> = {
         searchTerms: [searchQuery],
         maxItems,
-        sort,
+        sort_order: sortOrder,
     };
 
     try {
@@ -232,9 +241,10 @@ export async function scrapeConversation(
 ): Promise<ScrapeResult> {
     const client = getApifyClient();
     const {
-        sort = "Latest",
+        sortOrder = "recency",
         maxItems = 100,
-        sinceId,
+        untilTime,
+        sinceTime,
         minFollowers,
         includeOriginalTweet = true,
     } = options;
@@ -242,9 +252,10 @@ export async function scrapeConversation(
     log("Starting conversation scrape", {
         conversationId,
         maxItems,
-        sort,
+        sortOrder,
         includeOriginalTweet,
-        sinceId,
+        untilTime,
+        sinceTime,
         minFollowers,
     });
 
@@ -267,9 +278,10 @@ export async function scrapeConversation(
         const [originalTweet, replies] = await Promise.all([
             originalTweetPromise,
             fetchReplies(client, conversationId, {
-                sort,
+                sortOrder,
                 maxItems,
-                sinceId,
+                untilTime,
+                sinceTime,
                 minFollowers,
             }),
         ]);
@@ -369,16 +381,18 @@ export async function fetchConversationReplies(
 ): Promise<ScrapedTweet[]> {
     const client = getApifyClient();
     const {
-        sort = "Latest",
+        sortOrder = "recency",
         maxItems = 100,
-        sinceId,
+        untilTime,
+        sinceTime,
         minFollowers,
     } = options;
 
     return fetchReplies(client, conversationId, {
-        sort,
+        sortOrder,
         maxItems,
-        sinceId,
+        untilTime,
+        sinceTime,
         minFollowers,
     });
 }

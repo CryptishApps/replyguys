@@ -33,7 +33,7 @@ export const recurringScrapeFunction = inngest.createFunction(
         const checkResult = await step.run("check-report-status", async () => {
             await logReportActivity(
                 supabase,
-                { report_id: reportId, key: "scrape", message: "Checking for new replies" },
+                { report_id: reportId, key: "scrape", message: "Checking for replies" },
                 log
             );
             log("check", "Fetching report status and settings");
@@ -42,7 +42,7 @@ export const recurringScrapeFunction = inngest.createFunction(
             const [reportResult, countResult] = await Promise.all([
                 supabase
                     .from("reports")
-                    .select("status, reply_threshold, min_length, blue_only, min_followers, useful_count, last_reply_date, last_reply_id")
+                    .select("status, reply_threshold, min_length, blue_only, min_followers, useful_count, oldest_reply_date, newest_reply_date, scrape_phase")
                     .eq("id", reportId)
                     .single(),
                 supabase
@@ -61,8 +61,10 @@ export const recurringScrapeFunction = inngest.createFunction(
 
             log("check", "Report loaded", {
                 status: reportResult.data.status,
+                phase: reportResult.data.scrape_phase,
                 qualified: `${qualifiedCount}/${reportResult.data.reply_threshold}`,
-                lastReplyId: reportResult.data.last_reply_id,
+                oldestReplyDate: reportResult.data.oldest_reply_date,
+                newestReplyDate: reportResult.data.newest_reply_date,
             });
 
             return { 
@@ -85,29 +87,61 @@ export const recurringScrapeFunction = inngest.createFunction(
             return { skipped: true, reason: "Threshold already met" };
         }
 
-        // Step 2: Scrape new replies using since_id for precise pagination
-        const scrapeResult = await step.run("scrape-new-replies", async () => {
-            log("scrape", "Starting Apify scrape for new replies", {
-                sinceId: report.last_reply_id,
-                blueOnly: report.blue_only,
-                minFollowers: report.min_followers,
-            });
+        // Determine current phase
+        const currentPhase = report.scrape_phase ?? "backwards";
 
-            const result = await scrapeConversation(conversationId, {
-                sort: "Oldest",
-                maxItems: 100,
-                sinceId: report.last_reply_id ?? undefined,
-                blueOnly: report.blue_only,
-                minFollowers: report.min_followers ?? undefined,
-                includeOriginalTweet: false, // Don't need original tweet for recurring scrapes
-            });
+        // Step 2: Scrape replies based on current phase
+        const scrapeResult = await step.run("scrape-replies", async () => {
+            if (currentPhase === "backwards") {
+                // Phase 1: Backwards pagination - get older replies
+                const parsedDate = report.oldest_reply_date ? new Date(report.oldest_reply_date) : null;
+                const untilTime = parsedDate
+                    ? Math.floor(parsedDate.getTime() / 1000) - 1
+                    : undefined;
 
-            log("scrape", "Scrape completed", { repliesCount: result.replies.length });
+                log("scrape", "Phase 1 (backwards): Fetching older replies", {
+                    untilTime,
+                    oldestReplyDate: report.oldest_reply_date,
+                });
 
-            return result;
+                const result = await scrapeConversation(conversationId, {
+                    sortOrder: "recency",
+                    maxItems: 100,
+                    untilTime,
+                    blueOnly: report.blue_only,
+                    minFollowers: report.min_followers ?? undefined,
+                    includeOriginalTweet: false,
+                });
+
+                log("scrape", "Backwards scrape completed", { repliesCount: result.replies.length });
+                return { ...result, phase: "backwards" as const, exhausted: result.replies.length < 100 };
+            } else {
+                // Phase 2: Forward pagination - get newer replies
+                const parsedDate = report.newest_reply_date ? new Date(report.newest_reply_date) : null;
+                const sinceTime = parsedDate
+                    ? Math.floor(parsedDate.getTime() / 1000) + 1
+                    : undefined;
+
+                log("scrape", "Phase 2 (forward): Checking for new replies", {
+                    sinceTime,
+                    newestReplyDate: report.newest_reply_date,
+                });
+
+                const result = await scrapeConversation(conversationId, {
+                    sortOrder: "recency",
+                    maxItems: 50,
+                    sinceTime,
+                    blueOnly: report.blue_only,
+                    minFollowers: report.min_followers ?? undefined,
+                    includeOriginalTweet: false,
+                });
+
+                log("scrape", "Forward scrape completed", { repliesCount: result.replies.length });
+                return { ...result, phase: "forward" as const, exhausted: false };
+            }
         });
 
-        // Step 3: Filter and insert replies (using shared utility)
+        // Step 3: Filter and insert replies
         const insertResult = await step.run("filter-and-insert-replies", async () => {
             return filterAndInsertReplies(
                 supabase,
@@ -118,15 +152,26 @@ export const recurringScrapeFunction = inngest.createFunction(
             );
         });
 
-        // Step 4: Update report progress (using shared utility)
+        // Determine if we should switch phases
+        const shouldSwitchToForward = scrapeResult.phase === "backwards" && scrapeResult.exhausted;
+        const newPhase = shouldSwitchToForward ? "forward" : scrapeResult.phase;
+
+        if (shouldSwitchToForward) {
+            log("phase", "Backwards pagination exhausted, switching to forward phase");
+        }
+
+        // Step 4: Update report progress
         const newUsefulCount = report.useful_count + insertResult.inserted;
         await step.run("update-report-progress", async () => {
             return updateReportProgress(
                 supabase,
                 reportId,
-                newUsefulCount,
-                insertResult.lastReplyDate,
-                insertResult.lastReplyId,
+                {
+                    usefulCount: newUsefulCount,
+                    oldestReplyDate: insertResult.oldestReplyDate,
+                    newestReplyDate: insertResult.newestReplyDate,
+                    scrapePhase: newPhase,
+                },
                 log
             );
         });
@@ -166,15 +211,16 @@ export const recurringScrapeFunction = inngest.createFunction(
             });
         }
 
-        // Step 6: If we got max replies (100) and inserted some, chain another scrape
-        // This continues scraping when there are more replies available
-        const scrapedMax = scrapeResult.replies.length >= 100;
-        const insertedSome = insertResult.inserted > 0;
-        const shouldChain = scrapedMax && insertedSome;
+        // Step 6: Chain another scrape if needed
+        // In backwards phase: chain if we got max results
+        // In forward phase: don't chain (wait for cron)
+        const shouldChain = scrapeResult.phase === "backwards" && 
+                            scrapeResult.replies.length >= 100 && 
+                            insertResult.inserted > 0;
 
         if (shouldChain) {
             await step.run("log-chaining", async () => {
-                log("queue", "Got max replies - queuing another scrape");
+                log("queue", "More history available - queuing another scrape");
                 await logReportActivity(
                     supabase,
                     { report_id: reportId, key: "scrape", message: "Fetching more replies..." },
@@ -188,7 +234,9 @@ export const recurringScrapeFunction = inngest.createFunction(
         }
 
         const result = {
-            newRepliesFound: scrapeResult.replies.length,
+            phase: scrapeResult.phase,
+            phaseSwitched: shouldSwitchToForward,
+            repliesFound: scrapeResult.replies.length,
             repliesInserted: insertResult.inserted,
             totalUsefulCount: newUsefulCount,
             chainedRecurring: shouldChain,

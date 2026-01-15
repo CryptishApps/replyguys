@@ -78,7 +78,7 @@ export const initialScrapeFunction = inngest.createFunction(
             const result = await scrapeConversation(
                 conversationId,
                 {
-                    sort: "Oldest",
+                    sortOrder: "recency",
                     maxItems: 100,
                     blueOnly: settings.blue_only,
                     minFollowers: settings.min_followers ?? undefined,
@@ -161,9 +161,12 @@ export const initialScrapeFunction = inngest.createFunction(
             return updateReportProgress(
                 supabase,
                 reportId,
-                newUsefulCount,
-                insertResult.lastReplyDate,
-                insertResult.lastReplyId,
+                {
+                    usefulCount: newUsefulCount,
+                    oldestReplyDate: insertResult.oldestReplyDate,
+                    newestReplyDate: insertResult.newestReplyDate,
+                    scrapePhase: "backwards", // Initial scrape starts in backwards phase
+                },
                 log
             );
         });
