@@ -114,27 +114,39 @@ export async function GET(request: NextRequest) {
         let userId: string;
 
         if (signInError) {
-            // Sign in failed, create new user
-            const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            // Sign in failed, create new user via admin client (bypasses email confirmation)
+            const { data: createData, error: createError } = await adminClient.auth.admin.createUser({
                 email,
                 password,
-                options: {
-                    data: {
-                        x_username: xUserData.username,
-                        x_id: xUserData.id,
-                        avatar_url: xUserData.profile_image_url,
-                    },
+                email_confirm: true, // Mark as confirmed since X already verified them
+                user_metadata: {
+                    x_username: xUserData.username,
+                    x_id: xUserData.id,
+                    avatar_url: xUserData.profile_image_url,
                 },
             });
 
-            if (signUpError || !signUpData.user) {
-                console.error("Sign up failed:", signUpError);
+            if (createError || !createData.user) {
+                console.error("User creation failed:", createError);
                 return NextResponse.redirect(
                     new URL("/login?error=signup_failed", request.url)
                 );
             }
 
-            userId = signUpData.user.id;
+            userId = createData.user.id;
+
+            // Sign in the newly created user to establish session
+            const { error: newSignInError } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
+
+            if (newSignInError) {
+                console.error("Sign in after creation failed:", newSignInError);
+                return NextResponse.redirect(
+                    new URL("/login?error=signin_failed", request.url)
+                );
+            }
         } else {
             if (!signInData.user) {
                 return NextResponse.redirect(
