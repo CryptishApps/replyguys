@@ -214,17 +214,24 @@ export const recurringScrapeFunction = inngest.createFunction(
 
         // Step 6: Chain another scrape if needed
         // In backwards phase: chain if we got any results (keep paginating)
-        // In forward phase: don't chain (wait for cron)
-        const shouldChain = scrapeResult.phase === "backwards" && 
-                            scrapeResult.replies.length > 0 && 
-                            insertResult.inserted > 0;
+        // When switching to forward: chain immediately to start forward phase
+        // In forward phase (not switching): don't chain (wait for cron)
+        const continueBackwards = scrapeResult.phase === "backwards" && 
+                                  !shouldSwitchToForward &&
+                                  scrapeResult.replies.length > 0 && 
+                                  insertResult.inserted > 0;
+        const startForward = shouldSwitchToForward;
+        const shouldChain = continueBackwards || startForward;
 
         if (shouldChain) {
+            const message = startForward 
+                ? "History collected, now monitoring for new replies..."
+                : "Fetching more replies...";
             await step.run("log-chaining", async () => {
-                log("queue", "More history available - queuing another scrape");
+                log("queue", startForward ? "Switching to forward phase" : "More history available");
                 await logReportActivity(
                     supabase,
-                    { report_id: reportId, key: "scrape", message: "Fetching more replies..." },
+                    { report_id: reportId, key: "scrape", message },
                     log
                 );
             });
