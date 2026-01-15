@@ -7,8 +7,8 @@ import { evaluateReplyBatchFunction } from "@/lib/inngest/functions/evaluate-rep
 import { pollActiveReportsFunction } from "@/lib/inngest/functions/poll-active-reports";
 import { generateSummaryFunction } from "@/lib/inngest/functions/generate-summary";
 
-// Vercel Pro: 60s max, needed for batch AI evaluations
-export const maxDuration = 60;
+// Vercel Hobby + Fluid Compute: 300s max
+export const maxDuration = 300;
 
 export const { GET, POST, PUT } = serve({
     client: inngest,
