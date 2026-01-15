@@ -394,7 +394,7 @@ export interface EvaluationEventData {
     minLength: number;
 }
 
-const BATCH_SIZE = 10;
+const BATCH_SIZE = 50;
 
 interface BatchEventData {
     reportId: string;

@@ -24,7 +24,7 @@ export const evaluateReplyBatchFunction = inngest.createFunction(
         id: "evaluate-reply-batch",
         retries: 2,
         throttle: {
-            limit: 100, // 100 batches per minute = up to 1000 AI calls
+            limit: 20, // 20 batches × 50 replies = 1000 AI calls/min (Gemini limit)
             period: "1m",
         },
     },
