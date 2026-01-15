@@ -20,7 +20,7 @@ export const recurringScrapeFunction = inngest.createFunction(
     {
         id: "recurring-scrape",
         retries: 3,
-        concurrency: { limit: 10 },
+        concurrency: { limit: 5 },
     },
     { event: "report.scrape.recurring" },
     async ({ event, step }) => {

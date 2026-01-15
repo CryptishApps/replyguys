@@ -45,7 +45,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/replyguys.git
+git clone https://github.com/CryptishApps/replyguys.git
 cd replyguys
 
 # Install dependencies
