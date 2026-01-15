@@ -6,6 +6,13 @@ import { FeaturesSection } from "@/components/landing/features-1";
 import { FeaturesGrid } from "@/components/landing/features-grid";
 import { Pricing } from "@/components/landing/pricing";
 import { FooterSection } from "@/components/landing/footer-section";
+import { createMetadata } from "@/lib/metadata";
+
+export const metadata = createMetadata({
+    description:
+        "Transform hundreds of X replies into high-signal reports. ReplyGuys uses AI to find the valuable insights hidden in your audience's responses.",
+    path: "/",
+});
 
 export default function LandingPage() {
     return (

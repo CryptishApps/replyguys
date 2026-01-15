@@ -2,6 +2,14 @@ import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { LeaderboardContent } from "@/components/leaderboard-content";
 import { IconLoader2 } from "@tabler/icons-react";
+import { createMetadata } from "@/lib/metadata";
+
+export const metadata = createMetadata({
+    title: "Leaderboard",
+    description:
+        "Discover the top performers across all analyzed X posts. See who consistently provides the most valuable replies and insights.",
+    path: "/leaderboard",
+});
 
 interface PageProps {
     searchParams: Promise<{ user?: string; tab?: string }>;
