@@ -42,7 +42,7 @@ export async function GET() {
         maxAge: 60 * 10,
     });
 
-    const scopes = ["tweet.read", "tweet.write", "users.read", "offline.access"];
+    const scopes = ["tweet.read", "users.read", "offline.access"];
 
     const authUrl = new URL("https://x.com/i/oauth2/authorize");
     authUrl.searchParams.set("response_type", "code");

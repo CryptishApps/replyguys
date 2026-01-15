@@ -25,7 +25,7 @@ export const pollActiveReportsFunction = inngest.createFunction(
         const activeReports = await step.run("fetch-active-reports", async () => {
             const { data, error } = await supabase
                 .from("reports")
-                .select("id, conversation_id, useful_count, reply_threshold, qualified_count, last_reply_date, summary_status, status")
+                .select("id, conversation_id, created_at, summary_status, status")
                 .in("status", ["scraping", "pending", "setting_up"]);
 
             if (error) {
@@ -46,23 +46,14 @@ export const pollActiveReportsFunction = inngest.createFunction(
         const reportsToScrape: typeof activeReports = [];
         const reportsTimedOut: typeof activeReports = [];
 
-        // Check each report for timeout
+        // Check each report for timeout (24 hours from report creation, not reply date)
         for (const report of activeReports) {
-            const lastReplyTime = report.last_reply_date
-                ? new Date(report.last_reply_date).getTime()
-                : 0;
+            const reportCreatedTime = new Date(report.created_at).getTime();
+            const timeSinceCreation = now - reportCreatedTime;
 
-            const timeSinceLastReply = now - lastReplyTime;
-
-            if (lastReplyTime > 0 && timeSinceLastReply > TWENTY_FOUR_HOURS_MS) {
-                // Report has been idle for 24+ hours - monitoring period complete
-                if (report.qualified_count > 0 && report.summary_status === "pending") {
-                    log("timeout", `Report ${report.id} monitoring complete with ${report.qualified_count} qualified replies`);
-                    reportsTimedOut.push(report);
-                } else if (report.qualified_count === 0) {
-                    log("timeout", `Report ${report.id} monitoring complete with no qualified replies`);
-                    reportsTimedOut.push(report);
-                }
+            if (timeSinceCreation > TWENTY_FOUR_HOURS_MS) {
+                // Report has been running for 24+ hours - monitoring period complete
+                reportsTimedOut.push(report);
             } else {
                 reportsToScrape.push(report);
             }
@@ -72,13 +63,23 @@ export const pollActiveReportsFunction = inngest.createFunction(
         if (reportsTimedOut.length > 0) {
             await step.run("handle-timeouts", async () => {
                 for (const report of reportsTimedOut) {
-                    if (report.qualified_count > 0) {
+                    // Count actual qualified replies (don't trust the counter)
+                    const { count: qualifiedCount } = await supabase
+                        .from("replies")
+                        .select("id", { count: "exact", head: true })
+                        .eq("report_id", report.id)
+                        .eq("to_be_included", true);
+
+                    const actualCount = qualifiedCount ?? 0;
+                    log("timeout", `Report ${report.id} has ${actualCount} actual qualified replies`);
+
+                    if (actualCount > 0) {
                         // Mark as completed but keep summary_status pending for manual trigger
                         await supabase
                             .from("reports")
                             .update({ status: "completed" })
                             .eq("id", report.id);
-                        log("timeout", `Report ${report.id} marked completed - user can generate summary from ${report.qualified_count} replies`);
+                        log("timeout", `Report ${report.id} marked completed - user can generate summary from ${actualCount} replies`);
                     } else {
                         // No qualified replies - mark as fully completed with placeholder summary
                         await supabase

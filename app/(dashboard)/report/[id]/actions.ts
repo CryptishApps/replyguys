@@ -28,7 +28,7 @@ export async function generateSummary(reportId: string): Promise<ActionResult> {
     // Verify user owns this report and it has qualified replies
     const { data: report, error } = await supabase
         .from("reports")
-        .select("id, qualified_count, summary_status")
+        .select("id, summary_status")
         .eq("id", reportId)
         .eq("user_id", user.id)
         .single();
@@ -37,7 +37,14 @@ export async function generateSummary(reportId: string): Promise<ActionResult> {
         return { success: false, error: "Report not found" };
     }
 
-    if (report.qualified_count === 0) {
+    // Count actual qualified replies (don't trust the counter)
+    const { count: qualifiedCount } = await supabase
+        .from("replies")
+        .select("id", { count: "exact", head: true })
+        .eq("report_id", reportId)
+        .eq("to_be_included", true);
+
+    if (!qualifiedCount || qualifiedCount === 0) {
         return { success: false, error: "No qualified replies to summarize" };
     }
 
