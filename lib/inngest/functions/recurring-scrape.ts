@@ -115,7 +115,7 @@ export const recurringScrapeFunction = inngest.createFunction(
 
                 log("scrape", "Backwards scrape completed", { repliesCount: result.replies.length });
                 // Only switch to forward when we get 0 results - confirms history is truly exhausted
-                return { ...result, phase: "backwards" as const, exhausted: result.replies.length === 0 };
+                return { ...result, phase: "backwards" as const, exhausted: (result.replies.length === 0 || result.replies.length < 15) };
             } else {
                 // Phase 2: Forward pagination - get newer replies
                 const parsedDate = report.newest_reply_date ? new Date(report.newest_reply_date) : null;
