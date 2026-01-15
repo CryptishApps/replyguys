@@ -389,6 +389,7 @@ export default async function ReportPage({ params }: PageProps) {
                     initialReport={{
                         id: report.id,
                         status: report.status,
+                        created_at: report.created_at,
                         reply_count: report.reply_count,
                         reply_threshold: report.reply_threshold,
                         useful_count: report.useful_count,

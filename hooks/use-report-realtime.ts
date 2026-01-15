@@ -8,6 +8,7 @@ import type { ReplyTag } from "@/lib/ai/schemas";
 export interface ReportData {
     id: string;
     status: "setting_up" | "pending" | "scraping" | "completed" | "failed";
+    created_at: string;
     reply_count: number;
     reply_threshold: number;
     useful_count: number;

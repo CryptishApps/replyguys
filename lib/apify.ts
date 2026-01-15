@@ -33,7 +33,7 @@ export interface OriginalTweet {
 export interface ScrapeOptions {
     sort?: "Latest" | "Oldest" | "Top";
     maxItems?: number;
-    sinceDate?: string;
+    sinceId?: string;
     blueOnly?: boolean;
     minFollowers?: number;
     includeOriginalTweet?: boolean;
@@ -50,10 +50,6 @@ function getApifyClient() {
     });
 }
 
-function formatDateForQuery(isoDate: string): string {
-    // X search uses YYYY-MM-DD format
-    return isoDate.split("T")[0];
-}
 
 function log(message: string, data?: unknown) {
     const timestamp = new Date().toISOString();
@@ -176,11 +172,11 @@ async function fetchReplies(
     options: {
         sort: "Latest" | "Oldest" | "Top";
         maxItems: number;
-        sinceDate?: string;
+        sinceId?: string;
         minFollowers?: number;
     }
 ): Promise<ScrapedTweet[]> {
-    const { sort, maxItems, sinceDate, minFollowers } = options;
+    const { sort, maxItems, sinceId, minFollowers } = options;
 
     // Build search query - filter to replies only and exclude bots
     let searchQuery = `conversation_id:${conversationId} filter:replies`;
@@ -190,14 +186,15 @@ async function fetchReplies(
         searchQuery += ` -from:${bot}`;
     }
 
-    if (sinceDate) {
-        searchQuery += ` since:${formatDateForQuery(sinceDate)}`;
+    // Use since_id for precise pagination (returns tweets with ID > sinceId)
+    if (sinceId) {
+        searchQuery += ` since_id:${sinceId}`;
     }
     if (minFollowers) {
         searchQuery += ` min_followers:${minFollowers}`;
     }
 
-    log("Fetching replies", { query: searchQuery, maxItems, sort });
+    log("Fetching replies", { query: searchQuery, maxItems, sort, sinceId });
 
     const input = {
         searchTerms: [searchQuery],
@@ -237,7 +234,7 @@ export async function scrapeConversation(
     const {
         sort = "Latest",
         maxItems = 100,
-        sinceDate,
+        sinceId,
         minFollowers,
         includeOriginalTweet = true,
     } = options;
@@ -247,7 +244,7 @@ export async function scrapeConversation(
         maxItems,
         sort,
         includeOriginalTweet,
-        sinceDate,
+        sinceId,
         minFollowers,
     });
 
@@ -272,7 +269,7 @@ export async function scrapeConversation(
             fetchReplies(client, conversationId, {
                 sort,
                 maxItems,
-                sinceDate,
+                sinceId,
                 minFollowers,
             }),
         ]);
@@ -374,14 +371,14 @@ export async function fetchConversationReplies(
     const {
         sort = "Latest",
         maxItems = 100,
-        sinceDate,
+        sinceId,
         minFollowers,
     } = options;
 
     return fetchReplies(client, conversationId, {
         sort,
         maxItems,
-        sinceDate,
+        sinceId,
         minFollowers,
     });
 }

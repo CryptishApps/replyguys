@@ -67,11 +67,6 @@ export async function evaluateReply(
 
 USER'S GOAL: "${context.goal}"
 
-CRITICAL RULE: Score this reply ONLY on how well it helps the user achieve the above goal.
-- A reply asking a question provides NO actionable information to the goal-owner → score LOW
-- A reply about an unrelated topic scores NEAR-ZERO regardless of how articulate it is
-- Only replies that DIRECTLY inform the goal should score above 50 on any metric
-
 ORIGINAL POST:
 ${context.originalTweetText}
 
@@ -79,96 +74,123 @@ ${context.persona ? `TARGET AUDIENCE:\n${context.persona}\n\n` : ""}REPLY TO EVA
 Author: @${reply.username} (${reply.followerCount.toLocaleString()} followers)
 Text: ${reply.text}
 
-CALIBRATION TECHNIQUE:
-Before scoring, imagine 100 diverse replies to this post - from "lol" to detailed multi-paragraph analyses.
-Picture this distribution:
-- ~10% would be exceptional (85-100): detailed, specific, highly valuable
-- ~25% would be good (60-84): solid contributions with useful content  
-- ~35% would be medium (35-59): some value but vague or tangential
-- ~20% would be weak (15-34): minimal value, mostly noise
-- ~10% would be poor (0-14): completely off-topic or empty
+---
 
-Now ask: "Where does THIS reply fall among those imagined 100?"
-Pick a PRECISE score within that bracket (it doesn't have to be a multiple of 5 or 10) based on exactly where it sits.
+CRITICAL SCORING RULES (apply BEFORE scoring):
 
-SCORE THESE METRICS (0-100), evaluated through the lens of the user's goal.
-For each metric, first identify the bracket, then pick a precise score within it:
+1. QUESTIONS provide NO value to the goal-owner. A reply that only asks a question gives no actionable information → ALL metrics should be LOW (under 25).
 
-1. goal_relevance: How directly does this reply address the user's stated goal?
-   [90-100] Directly and fully addresses the goal → pick 90-94 if solid, 95-100 if exceptional
-   [70-89] Clearly related, addresses it partially → pick 70-79 if decent, 80-89 if strong
-   [40-69] Tangentially related, touches on topic → pick 40-54 if weak connection, 55-69 if clearer
-   [15-39] Loosely connected, mostly off-topic → pick 15-24 if barely related, 25-39 if some connection
-   [0-14] Completely unrelated or just asks an unrelated question
+2. INTEREST SIGNALS WITHOUT SUBSTANCE are worthless. Replies like "In", "Interested", "🙋", "Following" express intent but provide ZERO information → ALL metrics should be VERY LOW (under 15).
 
-2. actionability: Does this give the goal-owner specific steps or information they can act on?
-   [90-100] Specific, implementable suggestions or clear actionable data
-   [70-89] Actionable ideas but needs some interpretation
-   [40-69] Some actionable hints, but vague
-   [15-39] Minimal actionable content
-   [0-14] No actionable info (pure questions, vague agreement)
+3. The reply must contain ACTUAL CONTENT that informs the goal. "I might have someone" or "DM me" requires a follow-up to get value → score LOW.
 
-3. specificity: Does this provide concrete details that directly inform the user's goal?
-   [90-100] Numbers, specific examples, named tools/products, timeframes
+4. For goals about FINDING PEOPLE (candidates, experts, collaborators, etc.): The replier must DEMONSTRATE their value in the reply itself - credentials, experience, portfolio, specific skills. Just expressing interest is not enough.
+
+---
+
+CALIBRATION: Picture 100 diverse replies. Ask: "Where does THIS one fall?"
+- ~10% exceptional (85-100): detailed, specific, highly valuable
+- ~25% good (60-84): solid contributions with useful content  
+- ~35% medium (35-59): some value but vague or tangential
+- ~20% weak (15-34): minimal value, mostly noise
+- ~10% poor (0-14): completely off-topic, questions only, or empty
+
+SCORE THESE METRICS (0-100):
+
+1. goal_relevance: Does this reply INFORM the goal with actual content?
+   [90-100] Directly addresses the goal with substantial content
+   [70-89] Clearly related, provides useful content
+   [40-69] Tangentially related, some useful content
+   [15-39] Loosely connected, minimal useful content
+   [0-14] Off-topic, OR only asks questions, OR only expresses interest without substance
+
+2. actionability: Does this give the goal-owner information they can USE right now?
+   [90-100] Specific data, examples, or clear next steps
+   [70-89] Useful information with some interpretation needed
+   [40-69] Some hints, but vague
+   [15-39] Minimal usable content
+   [0-14] Nothing usable (questions, "interested", "DM me", etc.)
+
+3. specificity: Does this contain concrete details relevant to the goal?
+   [90-100] Numbers, examples, named entities, credentials, portfolio links
    [70-89] Good detail but missing some specifics
-   [40-69] Some detail, mostly general
+   [40-69] Some detail, mostly general statements
    [15-39] Vague with occasional specific word
-   [0-14] Completely generic
+   [0-14] Completely generic or empty of detail
 
-4. substantiveness: Does this go beyond a surface reaction to provide reasoning?
-   [90-100] Multi-sentence reasoning with explanation of why
+4. substantiveness: Is there actual reasoning or content beyond a surface reaction?
+   [90-100] Multi-sentence explanation with reasoning
    [70-89] Provides reasoning but could be deeper
    [40-69] Some explanation beyond surface reaction
    [15-39] Brief reaction with minimal reasoning
-   [0-14] One-liner reaction ("cool!", "nice", "I agree")
+   [0-14] One word/emoji, "In", "Interested", "Nice", "I agree", etc.
 
-5. constructiveness: Does this advance the goal-owner's understanding of their objective?
+5. constructiveness: Does this advance the goal-owner's understanding?
    [90-100] Significantly advances understanding with valuable perspective
    [70-89] Adds useful perspective
-   [40-69] Somewhat helpful to understanding
+   [40-69] Somewhat helpful
    [15-39] Minor contribution
-   [0-14] Off-topic, reactive, or detracts from goal
+   [0-14] No contribution (off-topic, reactive, or requires follow-up to extract value)
 
-TAGS: Categorize as one or more of: feature_request, complaint, praise, question, suggestion, personal_experience, data_point, counterpoint, agreement
+TAGS: feature_request, complaint, praise, question, suggestion, personal_experience, data_point, counterpoint, agreement
 
 MINI_SUMMARY: One SHORT sentence capturing the core point (max 300 chars, aim for under 150)
 
-TO_BE_INCLUDED: Set to TRUE only if ALL conditions are met:
-1. goal_relevance >= 35 (the reply meaningfully relates to the goal)
-2. substantiveness >= 25 (more than a one-liner reaction)
-3. The reply provides actual information, opinion, or perspective (not just a question)
+TO_BE_INCLUDED: TRUE only if ALL conditions are met:
+1. goal_relevance >= 35
+2. substantiveness >= 25
+3. The reply contains actual information/opinion (NOT just a question or interest signal)
 
 ---
-SCORING EXAMPLES (for goal: "What people think about the change to my products"):
+EXAMPLES for goal "Find interesting candidates":
 
-EXCELLENT (85+) - "The AI-generated job posts feel more natural now. Before it took me 30min to write one, now it's under 10. The tone matching is noticeably better with Grok vs GPT-4."
+EXCELLENT - "Built AI-first products, shipped 1M+ LOC across 3 startups. I handle product, distribution, and branding end-to-end. Portfolio: example.com/work"
+→ goal_relevance: 92, actionability: 85, specificity: 88, substantiveness: 78, constructiveness: 90
+→ to_be_included: true (demonstrates credentials, specific experience, portfolio)
+
+GOOD - "5 years in growth marketing at YC companies. Specialized in B2B SaaS acquisition. Happy to chat."
+→ goal_relevance: 75, actionability: 62, specificity: 68, substantiveness: 55, constructiveness: 72
+→ to_be_included: true (credentials and specialization, though could be more specific)
+
+LOW - "I have someone, are you still hiring?"
+→ goal_relevance: 22, actionability: 8, specificity: 5, substantiveness: 15, constructiveness: 12
+→ to_be_included: false (asks question, provides no information about the candidate)
+
+VERY LOW - "In" / "Interested" / "🙋"
+→ goal_relevance: 5, actionability: 0, specificity: 0, substantiveness: 3, constructiveness: 2
+→ to_be_included: false (zero-content interest signal)
+
+VERY LOW - "What's the role?" / "Remote?"
+→ goal_relevance: 12, actionability: 0, specificity: 8, substantiveness: 8, constructiveness: 5
+→ to_be_included: false (question only, no information about the person)
+
+---
+EXAMPLES for goal "What people think about the product change":
+
+EXCELLENT - "The AI-generated posts feel more natural now. Before it took 30min, now under 10. The tone matching is noticeably better."
 → goal_relevance: 95, actionability: 72, specificity: 88, substantiveness: 82, constructiveness: 91
 → to_be_included: true (direct feedback with specific comparison and data)
 
-GOOD (60-84) - "I noticed the AI suggestions are faster, but sometimes they miss context. Overall an improvement though."
+GOOD - "Faster, but sometimes misses context. Overall an improvement though."
 → goal_relevance: 78, actionability: 45, specificity: 52, substantiveness: 65, constructiveness: 71
-→ to_be_included: true (relevant feedback, some detail, but could be more specific)
+→ to_be_included: true (relevant feedback, some detail)
 
-MEDIUM (35-59) - "Interesting move to xAI. Curious how it compares cost-wise."
-→ goal_relevance: 55, actionability: 22, specificity: 35, substantiveness: 42, constructiveness: 48
-→ to_be_included: true (tangentially related, shows interest but no actual opinion on the change)
-
-LOW (15-34) - "What was your preferred model before? 4o?"
+LOW - "What was the model before?"
 → goal_relevance: 18, actionability: 5, specificity: 28, substantiveness: 12, constructiveness: 15
-→ to_be_included: false (asks question, provides no opinion about the change)
-
-VERY LOW (0-14) - "Your CSS is broken on another site"
-→ goal_relevance: 8, actionability: 3, specificity: 35, substantiveness: 18, constructiveness: 6
-→ to_be_included: false (off-topic bug report, not about the AI change)
+→ to_be_included: false (question, no opinion about the change)
 
 Now evaluate the reply above.`;
 
     const { output: evaluation } = await generateText({
-        model: google("gemini-2.0-flash"),
+        model: google("gemini-3-flash-preview"),
         prompt,
         temperature: 0.3,
         output: Output.object({ schema: ReplyEvaluationSchema }),
     });
+
+    if (!evaluation) {
+        throw new Error("AI returned empty evaluation");
+    }
 
     const weightedScore = calculateWeightedScore(evaluation, weights);
 

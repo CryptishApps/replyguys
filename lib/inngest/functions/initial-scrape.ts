@@ -157,30 +157,32 @@ export const initialScrapeFunction = inngest.createFunction(
 
         // Step 4: Update report progress (using shared utility)
         const newUsefulCount = settings.useful_count + insertResult.inserted;
-        const { reachedScrapeCap } = await step.run("update-report-progress", async () => {
+        await step.run("update-report-progress", async () => {
             return updateReportProgress(
                 supabase,
                 reportId,
                 newUsefulCount,
-                settings.reply_threshold,
                 insertResult.lastReplyDate,
+                insertResult.lastReplyId,
                 log
             );
         });
 
         // Step 5: Fan-out evaluation events for inserted replies
         if (insertResult.inserted > 0) {
-            log("evaluate", `Sending ${insertResult.insertedReplies.length} evaluation events`);
-            await logReportActivity(
-                supabase,
-                {
-                    report_id: reportId,
-                    key: "evaluate",
-                    message: `Evaluating ${insertResult.insertedReplies.length} ${insertResult.insertedReplies.length === 1 ? "reply" : "replies"}`,
-                    meta: { count: insertResult.insertedReplies.length },
-                },
-                log
-            );
+            await step.run("log-and-send-evaluations", async () => {
+                log("evaluate", `Sending ${insertResult.insertedReplies.length} evaluation events`);
+                await logReportActivity(
+                    supabase,
+                    {
+                        report_id: reportId,
+                        key: "evaluate",
+                        message: `Evaluating ${insertResult.insertedReplies.length} ${insertResult.insertedReplies.length === 1 ? "reply" : "replies"}`,
+                        meta: { count: insertResult.insertedReplies.length },
+                    },
+                    log
+                );
+            });
 
             const events = createEvaluationEvents(insertResult.insertedReplies, reportId, settings.min_length);
             await step.sendEvent("evaluation-events", events);
@@ -188,20 +190,21 @@ export const initialScrapeFunction = inngest.createFunction(
             log("evaluate", "Evaluation events sent");
         }
 
-        // Step 6: If we got max replies (100), inserted some, and filtered some out, queue recurring scrape
-        // This avoids waiting for the cron when we know there are more replies available
-        // Skip if we've reached the scrape cap (3x threshold) or inserted nothing
+        // Step 6: If we got max replies (100) and inserted some, chain recurring scrape
+        // This continues scraping when there are more replies available
         const scrapedMax = scrapeResult.replies.length >= 100;
         const insertedSome = insertResult.inserted > 0;
-        const filteredSome = insertResult.inserted < scrapeResult.replies.length;
+        const shouldChain = scrapedMax && insertedSome;
 
-        if (!reachedScrapeCap && scrapedMax && insertedSome && filteredSome) {
-            log("queue", "Got max replies and filtered some - queuing immediate recurring scrape");
-            await logReportActivity(
-                supabase,
-                { report_id: reportId, key: "scrape", message: "Fetching more replies..." },
-                log
-            );
+        if (shouldChain) {
+            await step.run("log-chaining", async () => {
+                log("queue", "Got max replies - queuing recurring scrape");
+                await logReportActivity(
+                    supabase,
+                    { report_id: reportId, key: "scrape", message: "Fetching more replies..." },
+                    log
+                );
+            });
             await step.sendEvent("immediate-recurring-scrape", {
                 name: "report.scrape.recurring",
                 data: { reportId, conversationId },
@@ -211,9 +214,8 @@ export const initialScrapeFunction = inngest.createFunction(
         const result = {
             repliesScraped: scrapeResult.replies.length,
             repliesInserted: insertResult.inserted,
-            reachedScrapeCap,
             originalTweetFetched: !!scrapeResult.originalTweet,
-            queuedRecurring: !reachedScrapeCap && scrapedMax && insertedSome && filteredSome,
+            queuedRecurring: shouldChain,
         };
 
         log("done", "Initial scrape finished", result);

@@ -1,5 +1,5 @@
 import { inngest } from "@/lib/inngest/client";
-import { getSupabaseAdmin, createLogger } from "@/lib/inngest/utils";
+import { getSupabaseAdmin, createLogger, logReportActivity } from "@/lib/inngest/utils";
 import { evaluateReply, type EvaluationContext, type ReplyToEvaluate } from "@/lib/ai/evaluate-reply";
 import type { Weights } from "@/lib/ai/schemas";
 
@@ -37,7 +37,8 @@ export const evaluateReplyFunction = inngest.createFunction(
                         to_be_included: false,
                         evaluation_status: "evaluated",
                     })
-                    .eq("id", replyId);
+                    .eq("id", replyId)
+                    .eq("report_id", reportId); // Composite key: (id, report_id)
             });
             return { replyId, evaluated: true, toBeIncluded: false, reason: "too_short" };
         }
@@ -54,6 +55,7 @@ export const evaluateReplyFunction = inngest.createFunction(
                     .from("replies")
                     .select("username, follower_count")
                     .eq("id", replyId)
+                    .eq("report_id", reportId) // Composite key: (id, report_id)
                     .single(),
             ]);
 
@@ -111,6 +113,7 @@ export const evaluateReplyFunction = inngest.createFunction(
                     evaluation_status: "evaluated",
                 })
                 .eq("id", replyId)
+                .eq("report_id", reportId) // Composite key: (id, report_id)
                 .select("id");
 
             if (error) {
@@ -175,6 +178,16 @@ export const evaluateReplyFunction = inngest.createFunction(
                         .from("reports")
                         .update({ status: "completed" })
                         .eq("id", reportId);
+
+                    await logReportActivity(
+                        supabase,
+                        {
+                            report_id: reportId,
+                            key: "complete",
+                            message: `Target reached! Generating your summary...`,
+                        },
+                        log
+                    );
                 });
 
                 await step.sendEvent("trigger-summary", {

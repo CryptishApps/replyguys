@@ -122,7 +122,7 @@ export function ReportForm() {
                             disabled={isPending}
                         />
                         <FieldDescription>
-                            Number of qualified replies to collect before generating summary (max 250)
+                            Minimum qualified replies before generating summary. May collect more for a richer analysis.
                         </FieldDescription>
                     </Field>
 

@@ -105,7 +105,7 @@ export function mapToReplyRecords(replies: ScrapedTweet[], reportId: string) {
 
 /**
  * Gets the most recent reply date from a list of replies.
- * Used for pagination with the since: filter.
+ * Used for 24-hour timeout logic.
  */
 export function getLatestReplyDate(
     replies: ScrapedTweet[],
@@ -120,6 +120,26 @@ export function getLatestReplyDate(
     return sortedByDate[0]?.createdAt ?? fallback;
 }
 
+/**
+ * Gets the highest reply ID from a list of replies.
+ * Used for pagination with since_id filter.
+ */
+export function getLatestReplyId(
+    replies: ScrapedTweet[],
+    fallback: string | null = null
+): string | null {
+    if (replies.length === 0) return fallback;
+
+    // Tweet IDs are snowflake IDs - higher = newer
+    // Compare as BigInt for accuracy with large IDs
+    const maxId = replies.reduce((max, reply) => {
+        const replyId = BigInt(reply.id);
+        return replyId > max ? replyId : max;
+    }, BigInt(0));
+
+    return maxId > 0 ? maxId.toString() : fallback;
+}
+
 // ============================================================================
 // Shared Processing Logic
 // ============================================================================
@@ -131,11 +151,13 @@ export interface ReportSettings {
     blue_only: boolean;
     useful_count: number;
     last_reply_date?: string | null;
+    last_reply_id?: string | null;
 }
 
 export interface FilterAndInsertResult {
     inserted: number;
     lastReplyDate: string | null;
+    lastReplyId: string | null;
     insertedReplies: ScrapedTweet[];
 }
 
@@ -162,6 +184,7 @@ export async function filterAndInsertReplies(
         return {
             inserted: 0,
             lastReplyDate: settings.last_reply_date ?? null,
+            lastReplyId: settings.last_reply_id ?? null,
             insertedReplies: [],
         };
     }
@@ -204,32 +227,64 @@ export async function filterAndInsertReplies(
         );
     }
 
-    // Insert all filtered replies - the scrape cap (3x threshold) limits total volume,
-    // and evaluate-reply handles completion when qualified_count meets threshold
-    const repliesToInsert = filteredReplies;
-
-    log("filter", `Will insert ${repliesToInsert.length} replies`);
-
+    // Track pagination: use ALL replies (not just filtered) for cursor position
     const lastReplyDate = getLatestReplyDate(replies, settings.last_reply_date ?? null);
+    const lastReplyId = getLatestReplyId(replies, settings.last_reply_id ?? null);
 
-    if (repliesToInsert.length === 0) {
-        return { inserted: 0, lastReplyDate, insertedReplies: [] };
+    if (filteredReplies.length === 0) {
+        return { inserted: 0, lastReplyDate, lastReplyId, insertedReplies: [] };
     }
 
-    const replyRecords = mapToReplyRecords(repliesToInsert, reportId);
+    // Check which replies already exist IN THIS REPORT to get accurate "new" count
+    // Note: Primary key is (id, report_id), so same tweet can exist in multiple reports
+    const replyIds = filteredReplies.map(r => String(r.id));
+    const { data: existingReplies } = await supabase
+        .from("replies")
+        .select("id")
+        .eq("report_id", reportId)
+        .in("id", replyIds);
 
-    log("insert", `Upserting ${replyRecords.length} replies to database`);
+    const existingIds = new Set(existingReplies?.map(r => r.id) ?? []);
+    const newReplies = filteredReplies.filter(r => !existingIds.has(String(r.id)));
 
+    // Deduplicate within batch (Apify can return duplicates)
+    const seenIds = new Set<string>();
+    const uniqueNewReplies = newReplies.filter(r => {
+        const id = String(r.id);
+        if (seenIds.has(id)) return false;
+        seenIds.add(id);
+        return true;
+    });
+
+    log("filter", `${filteredReplies.length} passed filters, ${uniqueNewReplies.length} are new (${existingIds.size} already exist, ${newReplies.length - uniqueNewReplies.length} duplicates in batch)`);
+
+    if (uniqueNewReplies.length === 0) {
+        log("filter", "No new replies to insert");
+        return { inserted: 0, lastReplyDate, lastReplyId, insertedReplies: [] };
+    }
+
+    const replyRecords = mapToReplyRecords(uniqueNewReplies, reportId);
+
+    log("insert", `Inserting ${replyRecords.length} NEW replies to database`);
+
+    // Insert new replies - we've already checked for duplicates, but handle race conditions
     const { error } = await supabase
         .from("replies")
-        .upsert(replyRecords, { onConflict: "id" });
+        .insert(replyRecords);
 
     if (error) {
-        log("insert", "Failed to insert replies", { error: error.message });
-        throw new Error(`Failed to insert replies: ${error.message}`);
+        // Handle race condition: if another process inserted the same reply, just log and continue
+        if (error.code === "23505") { // Postgres unique violation
+            log("insert", "Some replies already exist (race condition), continuing", { 
+                error: error.message 
+            });
+        } else {
+            log("insert", "Failed to insert replies", { error: error.message });
+            throw new Error(`Failed to insert replies: ${error.message}`);
+        }
     }
 
-    log("insert", `Successfully inserted ${replyRecords.length} replies`);
+    log("insert", `Successfully inserted ${replyRecords.length} new replies`);
     await logReportActivity(
         supabase,
         {
@@ -241,40 +296,34 @@ export async function filterAndInsertReplies(
         log
     );
 
-    return { inserted: repliesToInsert.length, lastReplyDate, insertedReplies: repliesToInsert };
+    return { inserted: uniqueNewReplies.length, lastReplyDate, lastReplyId, insertedReplies: uniqueNewReplies };
 }
 
 /**
  * Updates the report progress in the database.
  * Status is always kept as "scraping" - only evaluate-reply triggers completion
  * when qualified_count meets threshold.
- * 
- * Returns reachedScrapeCap if we've scraped 3x the threshold (safety limit).
  */
 export async function updateReportProgress(
     supabase: SupabaseClient,
     reportId: string,
     newUsefulCount: number,
-    threshold: number,
     lastReplyDate: string | null,
+    lastReplyId: string | null,
     log: LogFn
-): Promise<{ reachedScrapeCap: boolean }> {
-    // Safety cap: stop scraping after 3x threshold to prevent infinite loops
-    const scrapeCap = threshold * 3;
-    const reachedScrapeCap = newUsefulCount >= scrapeCap;
-
-    log("progress", `Updating progress: ${newUsefulCount} scraped (cap: ${scrapeCap})`, {
-        reachedScrapeCap,
-        lastReplyDate,
+): Promise<void> {
+    log("progress", `Updating progress: ${newUsefulCount} scraped`, {
+        lastReplyId,
     });
 
     const { error } = await supabase
         .from("reports")
         .update({
-            status: "scraping", // Always stay scraping - evaluate-reply handles completion
+            status: "scraping",
             useful_count: newUsefulCount,
             reply_count: newUsefulCount,
             last_reply_date: lastReplyDate,
+            last_reply_id: lastReplyId,
         })
         .eq("id", reportId);
 
@@ -289,13 +338,11 @@ export async function updateReportProgress(
         {
             report_id: reportId,
             key: "progress",
-            message: `Updated report counts (${Math.min(newUsefulCount, threshold)}/${threshold})`,
-            meta: { usefulCount: newUsefulCount, threshold },
+            message: `Updated report counts`,
+            meta: { usefulCount: newUsefulCount },
         },
         log
     );
-
-    return { reachedScrapeCap };
 }
 
 export interface EvaluationEventData {

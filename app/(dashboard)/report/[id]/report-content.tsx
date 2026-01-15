@@ -10,6 +10,7 @@ import { ReplyCard } from "@/components/reply-card";
 import { ReportStats } from "@/components/report-stats";
 import { ReportSummary } from "@/components/report-summary";
 import { ReportActivityFeed } from "@/components/report-activity-feed";
+import { MonitoringCountdown } from "@/components/monitoring-countdown";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -173,12 +174,20 @@ export function ReportContent({
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle>{report.title || "Original Post"}</CardTitle>
-                    <Badge variant={displayStatus.variant} className="flex items-center gap-1">
-                        {isLoading && (
-                            <IconLoader2 className="size-3 animate-spin" />
+                    <div className="flex flex-col md:flex-row items-center gap-3">
+                        {isLoading && report.status === "scraping" && (
+                            <MonitoringCountdown
+                                createdAt={report.created_at}
+                                className="text-xs text-muted-foreground"
+                            />
                         )}
-                        {displayStatus.label}
-                    </Badge>
+                        <Badge variant={displayStatus.variant} className="flex items-center gap-1">
+                            {isLoading && (
+                                <IconLoader2 className="size-3 animate-spin" />
+                            )}
+                            {displayStatus.label}
+                        </Badge>
+                    </div>
                 </CardHeader>
                 <CardContent>
                     <AnimatePresence mode="wait">

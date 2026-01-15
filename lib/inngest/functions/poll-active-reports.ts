@@ -15,7 +15,7 @@ export const pollActiveReportsFunction = inngest.createFunction(
         id: "poll-active-reports",
         retries: 2,
     },
-    { cron: "*/3 * * * *" }, // Every 3 minutes
+    { cron: "*/2 * * * *" }, // Every 2 minutes
     async ({ step }) => {
         log("init", "Polling for active reports");
 
