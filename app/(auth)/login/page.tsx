@@ -7,8 +7,8 @@ import { Logo } from "@/components/logo";
 
 export default function LoginPage() {
     return (
-        <div className="grid min-h-svh lg:grid-cols-2">
-            <div className="flex flex-col gap-4 p-6 md:p-10">
+        <div className="grid min-h-svh lg:grid-cols-5">
+            <div className="flex flex-col gap-4 p-6 md:p-10 lg:col-span-3">
                 <div className="flex justify-center gap-2 md:justify-start">
                     <Link href="/" className="flex items-center gap-2 font-medium">
                         <ViewTransition name="logo">

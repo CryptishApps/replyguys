@@ -22,14 +22,14 @@ export function LoginPanel() {
     return (
         <div
             className={cn(
-                "bg-muted relative hidden lg:block overflow-hidden",
+                "lg:col-span-2 bg-muted relative hidden lg:block overflow-hidden",
                 "transform transition-transform duration-500 ease-out",
                 panelVisible ? "translate-x-0" : "translate-x-full"
             )}
             onTransitionEnd={handlePanelAnimationEnd}
         >
             <img
-                src="/login-hero.jpg"
+                src="/login-hero.webp"
                 alt="ReplyGuys"
                 className={cn(
                     "absolute inset-0 h-full w-full object-cover",

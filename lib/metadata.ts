@@ -22,8 +22,8 @@ export const siteConfig = {
 };
 
 // Images are auto-detected via file convention:
-// - /app/opengraph-image.png
-// - /app/twitter-image.png
+// - /app/opengraph-image.jpg
+// - /app/twitter-image.jpg
 export const baseMetadata: Metadata = {
     metadataBase: new URL(siteConfig.url),
     title: {
@@ -65,6 +65,9 @@ export const baseMetadata: Metadata = {
         apple: "/apple-touch-icon.png",
     },
     manifest: "/site.webmanifest",
+    other: {
+        "og:logo": `${siteConfig.url}/logo.webp`,
+    },
 };
 
 /**
@@ -91,6 +94,9 @@ export function createMetadata(overrides: {
     if (description) {
         metadata.description = description;
         metadata.openGraph = {
+            type: "website",
+            locale: "en_US",
+            siteName: siteConfig.name,
             title: title ? `${title} | ${siteConfig.name}` : `${siteConfig.name} - ${siteConfig.tagline}`,
             description,
             url,
