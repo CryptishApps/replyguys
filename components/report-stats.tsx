@@ -53,6 +53,9 @@ export function ReportStats({
                         / {threshold}
                     </span>
                 </div>
+                <span className="text-xs text-muted-foreground/70">
+                    May exceed if replies arrive quickly
+                </span>
             </div>
 
             {/* Progress */}
