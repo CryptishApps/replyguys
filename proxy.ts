@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/proxy'
 
-const publicRoutes = ['/', '/login', '/api/auth', '/api/inngest']
+const publicRoutes = ['/', '/leaderboard', '/login', '/api/auth', '/api/inngest']
 const authRedirectRoutes = ['/', '/login']
 
 export async function proxy(request: NextRequest) {

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { UserMenu } from "@/components/user-menu";
 import { ReportPicker } from "@/components/report-picker";
+import { AuthButton } from "@/components/auth-button";
 import { IconDashboard, IconPlus, IconTrophy } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/server";
 
@@ -33,9 +34,46 @@ export async function Nav() {
         reports = reportsResult.data;
     }
 
+    // Logged-out header (simpler, like landing page)
+    if (!user) {
+        return (
+            <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center justify-between w-full gap-4 px-4 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 border-b border-border">
+                <Link href="/" className="flex items-center">
+                    <Logo size="lg" />
+                </Link>
+
+                <nav className="hidden sm:flex items-center gap-1">
+                    <Link 
+                        href="/#how-it-works" 
+                        className="rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    >
+                        How it Works
+                    </Link>
+                    <Link 
+                        href="/#pricing" 
+                        className="rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    >
+                        Pricing
+                    </Link>
+                    <Link 
+                        href="/leaderboard" 
+                        className="rounded-md px-3 py-1.5 text-sm text-foreground font-medium hover:bg-muted transition-colors"
+                    >
+                        Leaderboard
+                    </Link>
+                </nav>
+
+                <AuthButton size="sm">
+                    Sign in with X
+                </AuthButton>
+            </header>
+        );
+    }
+
+    // Logged-in header (full dashboard nav)
     return (
         <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center justify-between w-full gap-2 px-4 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 border-b border-border">
-            {/* Left: Logo + Report Picker */}
+            {/* Left: Logo + Nav */}
             <div className="flex items-center gap-6">
                 <Link href="/dashboard" className="flex items-center">
                     <Logo size="sm" />
