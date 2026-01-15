@@ -91,7 +91,13 @@ function validateApifyResponse(items: unknown[]): ScrapedTweet[] {
 
     items.forEach((item, index) => {
         if (validateTweet(item)) {
-            valid.push(item);
+            // Normalize ID to string to avoid JavaScript number precision loss
+            // Tweet IDs exceed MAX_SAFE_INTEGER (2^53-1), so numeric IDs lose precision
+            const normalized = {
+                ...item,
+                id: String(item.id),
+            } as ScrapedTweet;
+            valid.push(normalized);
         } else {
             invalid.push(index);
         }
@@ -158,6 +164,9 @@ async function fetchTweetById(
     }
 }
 
+// Bot accounts to exclude at query level (more efficient than client-side filtering)
+const EXCLUDED_BOTS = ["grok"];
+
 /**
  * Fetches replies to a conversation using conversation_id: search.
  */
@@ -173,8 +182,13 @@ async function fetchReplies(
 ): Promise<ScrapedTweet[]> {
     const { sort, maxItems, sinceDate, minFollowers } = options;
 
-    // Build search query - always filter to replies only
+    // Build search query - filter to replies only and exclude bots
     let searchQuery = `conversation_id:${conversationId} filter:replies`;
+
+    // Exclude known bot accounts
+    for (const bot of EXCLUDED_BOTS) {
+        searchQuery += ` -from:${bot}`;
+    }
 
     if (sinceDate) {
         searchQuery += ` since:${formatDateForQuery(sinceDate)}`;
@@ -210,9 +224,14 @@ async function fetchReplies(
     }
 }
 
+export interface ScrapeCallbacks {
+    onOriginalTweetFetched?: (tweet: OriginalTweet) => Promise<void>;
+}
+
 export async function scrapeConversation(
     conversationId: string,
-    options: ScrapeOptions = {}
+    options: ScrapeOptions = {},
+    callbacks: ScrapeCallbacks = {}
 ): Promise<ScrapeResult> {
     const client = getApifyClient();
     const {
@@ -236,10 +255,20 @@ export async function scrapeConversation(
 
     try {
         // Make parallel calls: one for original tweet (if needed), one for replies
+        // The original tweet callback fires as soon as that promise resolves,
+        // without waiting for replies
+        const originalTweetPromise = includeOriginalTweet
+            ? fetchTweetById(client, conversationId).then(async (tweet) => {
+                if (tweet && callbacks.onOriginalTweetFetched) {
+                    log("Original tweet fetched, calling callback immediately");
+                    await callbacks.onOriginalTweetFetched(tweet);
+                }
+                return tweet;
+            })
+            : Promise.resolve(null);
+
         const [originalTweet, replies] = await Promise.all([
-            includeOriginalTweet
-                ? fetchTweetById(client, conversationId)
-                : Promise.resolve(null),
+            originalTweetPromise,
             fetchReplies(client, conversationId, {
                 sort,
                 maxItems,
@@ -321,3 +350,38 @@ export function filterRepliesByBlueOnly(
 
 // Re-export ScrapedTweet as ScrapedReply for backwards compatibility
 export type ScrapedReply = ScrapedTweet;
+
+/**
+ * Fetches just the original tweet by ID.
+ * Useful when you want the original tweet immediately without waiting for replies.
+ */
+export async function fetchOriginalTweet(
+    conversationId: string
+): Promise<OriginalTweet | null> {
+    const client = getApifyClient();
+    return fetchTweetById(client, conversationId);
+}
+
+/**
+ * Fetches just the replies to a conversation.
+ * Useful when you've already fetched the original tweet separately.
+ */
+export async function fetchConversationReplies(
+    conversationId: string,
+    options: Omit<ScrapeOptions, "includeOriginalTweet"> = {}
+): Promise<ScrapedTweet[]> {
+    const client = getApifyClient();
+    const {
+        sort = "Latest",
+        maxItems = 100,
+        sinceDate,
+        minFollowers,
+    } = options;
+
+    return fetchReplies(client, conversationId, {
+        sort,
+        maxItems,
+        sinceDate,
+        minFollowers,
+    });
+}

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { ReportCard } from "@/components/report-card";
+import { ReportCardList } from "@/components/report-card";
 
 type ReportStatus = "setting_up" | "pending" | "scraping" | "completed" | "failed";
 
@@ -17,7 +17,9 @@ interface Report {
     original_author_avatar: string | null;
     original_tweet_text: string | null;
     reply_threshold: number;
-    useful_count: number;
+    qualified_count: number;
+    quality_index: number | null;
+    title: string | null;
 }
 
 export default async function DashboardPage() {
@@ -28,17 +30,39 @@ export default async function DashboardPage() {
         redirect("/login");
     }
 
-    const { data } = await supabase
+    const { data: reportsData } = await supabase
         .from("reports")
         .select(`
             id, x_post_url, conversation_id, status, reply_count, created_at,
             original_author_username, original_author_avatar, original_tweet_text,
-            reply_threshold, useful_count
+            reply_threshold, qualified_count, title
         `)
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
-    const reports = data as Report[] | null;
+    // Calculate qualified count and quality index from actual replies data
+    const reports: Report[] | null = reportsData ? await Promise.all(
+        reportsData.map(async (report) => {
+            const { data: qualifiedReplies } = await supabase
+                .from("replies")
+                .select("weighted_score")
+                .eq("report_id", report.id)
+                .eq("to_be_included", true)
+                .not("weighted_score", "is", null);
+
+            const scores = qualifiedReplies?.map(r => r.weighted_score).filter((s): s is number => s !== null) ?? [];
+            const qualifiedCount = scores.length;
+            const qualityIndex = qualifiedCount > 0 
+                ? Math.round(scores.reduce((a, b) => a + b, 0) / qualifiedCount) 
+                : null;
+
+            return {
+                ...report,
+                qualified_count: qualifiedCount,
+                quality_index: qualityIndex,
+            } as Report;
+        })
+    ) : null;
 
     return (
         <div className="space-y-6">
@@ -50,24 +74,7 @@ export default async function DashboardPage() {
             </div>
 
             {reports && reports.length > 0 ? (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {reports.map((report) => (
-                        <ReportCard
-                            key={report.id}
-                            id={report.id}
-                            xPostUrl={report.x_post_url}
-                            conversationId={report.conversation_id}
-                            status={report.status}
-                            replyCount={report.reply_count}
-                            createdAt={report.created_at}
-                            originalAuthorUsername={report.original_author_username}
-                            originalAuthorAvatar={report.original_author_avatar}
-                            originalTweetText={report.original_tweet_text}
-                            replyThreshold={report.reply_threshold}
-                            usefulCount={report.useful_count}
-                        />
-                    ))}
-                </div>
+                <ReportCardList reports={reports} />
             ) : (
                 <div className="flex flex-col items-center justify-center py-16 px-4 border border-dashed border-border rounded-lg bg-card/50">
                     <div className="size-16 rounded-full bg-muted flex items-center justify-center mb-4">

@@ -9,12 +9,60 @@ type ActionResult =
     | { success: true; reportId: string }
     | { success: false; error: string };
 
-function extractConversationId(url: string): string | null {
-    // Match patterns like:
-    // https://x.com/user/status/1234567890
-    // https://twitter.com/user/status/1234567890
-    const match = url.match(/(?:x\.com|twitter\.com)\/\w+\/status\/(\d+)/);
-    return match ? match[1] : null;
+type UrlValidationResult =
+    | { valid: true; conversationId: string }
+    | { valid: false; error: string };
+
+function validateXPostUrl(url: string): UrlValidationResult {
+    // Normalize and trim
+    const trimmed = url.trim();
+    if (!trimmed) {
+        return { valid: false, error: "URL is required" };
+    }
+
+    // Parse as URL
+    let parsed: URL;
+    try {
+        parsed = new URL(trimmed);
+    } catch {
+        return { valid: false, error: "Invalid URL format" };
+    }
+
+    // Check protocol
+    if (!["https:"].includes(parsed.protocol)) {
+        return { valid: false, error: "URL must use https" };
+    }
+
+    // Check domain (allow www. prefix and mobile. prefix)
+    const hostname = parsed.hostname.replace(/^(www\.|mobile\.)/, "");
+    if (hostname !== "x.com" && hostname !== "twitter.com") {
+        return { valid: false, error: "URL must be from x.com or twitter.com" };
+    }
+
+    // Parse path: /:username/status/:id
+    const pathParts = parsed.pathname.split("/").filter(Boolean);
+    if (pathParts.length < 3) {
+        return { valid: false, error: "URL must include username and status ID (e.g., /username/status/123)" };
+    }
+
+    const [username, statusKeyword, statusId] = pathParts;
+
+    // Validate username exists and is valid
+    if (!username || !/^[a-zA-Z0-9_]+$/.test(username)) {
+        return { valid: false, error: "Invalid username in URL" };
+    }
+
+    // Check for /status/ path
+    if (statusKeyword !== "status") {
+        return { valid: false, error: "URL must be a post URL containing /status/" };
+    }
+
+    // Validate status ID is numeric
+    if (!statusId || !/^\d+$/.test(statusId)) {
+        return { valid: false, error: "Invalid status ID - must be a number" };
+    }
+
+    return { valid: true, conversationId: statusId };
 }
 
 function parseWeights(weightsStr: string | null, preset: string): Weights {
@@ -30,7 +78,7 @@ function parseWeights(weightsStr: string | null, preset: string): Weights {
             return {
                 actionability: Math.min(100, Math.max(0, parsed.actionability ?? 25)),
                 specificity: Math.min(100, Math.max(0, parsed.specificity ?? 25)),
-                originality: Math.min(100, Math.max(0, parsed.originality ?? 25)),
+                substantiveness: Math.min(100, Math.max(0, parsed.substantiveness ?? 25)),
                 constructiveness: Math.min(100, Math.max(0, parsed.constructiveness ?? 25)),
             };
         } catch {
@@ -43,15 +91,12 @@ function parseWeights(weightsStr: string | null, preset: string): Weights {
 
 export async function createReport(formData: FormData): Promise<ActionResult> {
     const url = formData.get("url") as string;
-
-    if (!url) {
-        return { success: false, error: "URL is required" };
+    
+    const urlValidation = validateXPostUrl(url);
+    if (!urlValidation.valid) {
+        return { success: false, error: urlValidation.error };
     }
-
-    const conversationId = extractConversationId(url);
-    if (!conversationId) {
-        return { success: false, error: "Invalid X post URL" };
-    }
+    const { conversationId } = urlValidation;
 
     // Parse goal (required)
     const goal = (formData.get("goal") as string)?.trim();

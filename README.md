@@ -23,11 +23,12 @@
 ## ✨ Features
 
 - 🔍 **Smart Reply Scraping** — Automatically collect and process replies from any X post
-- 🤖 **AI-Powered Evaluation** — Gemini 2.0 Flash scores each reply on actionability, specificity, originality, and constructiveness
+- 🤖 **AI-Powered Evaluation** — Gemini 2.0 Flash scores each reply on goal relevance, actionability, specificity, substantiveness, and constructiveness
 - 📊 **Real-time Dashboard** — Watch replies being processed live with Supabase Realtime
 - 🎨 **AI-Generated Summaries** — Gemini 3 Pro generates executive summaries, key themes, action items, and hidden gems
 - 🎯 **Goal-Driven Analysis** — Define your research goal and target audience to get relevant insights
 - ⚖️ **Customizable Weights** — Choose from presets (balanced, research, ideas, feedback) or customize scoring weights
+- 🏆 **Global Leaderboard** — Discover top repliers by total score, average score, and best audiences
 - 🔐 **Secure OAuth** — X/Twitter OAuth 2.0 authentication
 
 ---
@@ -202,10 +203,15 @@ INNGEST_SIGNING_KEY=your_inngest_signing_key
 ├── app/
 │   ├── (auth)/          # Authentication routes
 │   ├── (dashboard)/     # Protected dashboard routes
+│   │   ├── dashboard/   # Report cards grid
+│   │   ├── leaderboard/ # Global leaderboard
+│   │   ├── new/         # Create new report
+│   │   └── report/[id]/ # Report details & analysis
 │   └── api/             # API routes (auth, inngest)
 ├── components/
+│   ├── ai-elements/     # AI-themed UI components
 │   └── ui/              # shadcn/ui components
-├── hooks/               # React hooks
+├── hooks/               # React hooks (realtime, infinite scroll)
 ├── lib/
 │   ├── ai/              # Gemini AI evaluation & summary
 │   ├── inngest/         # Inngest functions & client

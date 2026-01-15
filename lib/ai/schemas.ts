@@ -21,43 +21,50 @@ export type ReplyTag = z.infer<typeof ReplyTagSchema>;
  * Schema for individual reply evaluation (Gemini 2.0 Flash)
  */
 export const ReplyEvaluationSchema = z.object({
+    goal_relevance: z
+        .number()
+        .min(0)
+        .max(100)
+        .describe(
+            "How directly does this reply address the user's stated goal? 100 = directly answers/informs the goal, 0 = completely off-topic or asks an unrelated question"
+        ),
     actionability: z
         .number()
         .min(0)
         .max(100)
         .describe(
-            "Can someone take concrete action based on this? 100 = specific steps/suggestions, 0 = vague agreement"
+            "Does this give the goal-owner specific steps or information they can act on toward their goal? 100 = specific actionable info, 0 = no actionable content"
         ),
     specificity: z
         .number()
         .min(0)
         .max(100)
         .describe(
-            "Does it include details, examples, or data? 100 = concrete examples, 0 = generic statements"
+            "Does this provide concrete details that directly inform the user's goal? 100 = concrete examples/data, 0 = generic statements"
         ),
-    originality: z
+    substantiveness: z
         .number()
         .min(0)
         .max(100)
         .describe(
-            "Is this a unique perspective? 100 = fresh insight, 0 = obvious/repeated point"
+            "Does this go beyond a surface reaction to provide reasoning or explanation? 100 = detailed reasoning, 0 = one-liner reaction"
         ),
     constructiveness: z
         .number()
         .min(0)
         .max(100)
         .describe(
-            "Does it add value to the conversation? 100 = builds on topic helpfully, 0 = off-topic or just reactive"
+            "Does this advance the goal-owner's understanding of their objective? 100 = builds understanding helpfully, 0 = off-topic or just reactive"
         ),
     tags: z.array(ReplyTagSchema).describe("Categories that apply to this reply"),
     mini_summary: z
         .string()
-        .max(200)
-        .describe("One sentence capturing the core point of this reply"),
+        .max(300)
+        .describe("One concise sentence capturing the core point of this reply (max 290 chars)"),
     to_be_included: z
         .boolean()
         .describe(
-            "Should this reply be included in the final analysis? True if it provides genuine value given the user's goal"
+            "Should this reply be included in the final analysis? True only if goal_relevance >= 30 AND provides substantive information"
         ),
 });
 
@@ -198,7 +205,7 @@ export type ReportSummary = z.infer<typeof ReportSummarySchema>;
 export const WeightsSchema = z.object({
     actionability: z.number().min(0).max(100).default(25),
     specificity: z.number().min(0).max(100).default(25),
-    originality: z.number().min(0).max(100).default(25),
+    substantiveness: z.number().min(0).max(100).default(25),
     constructiveness: z.number().min(0).max(100).default(25),
 });
 
@@ -211,25 +218,25 @@ export const WEIGHT_PRESETS = {
     balanced: {
         actionability: 25,
         specificity: 25,
-        originality: 25,
+        substantiveness: 25,
         constructiveness: 25,
     },
     research: {
         actionability: 35,
         specificity: 35,
-        originality: 15,
+        substantiveness: 15,
         constructiveness: 15,
     },
     ideas: {
         actionability: 15,
         specificity: 15,
-        originality: 40,
+        substantiveness: 40,
         constructiveness: 30,
     },
     feedback: {
         actionability: 35,
         specificity: 20,
-        originality: 10,
+        substantiveness: 10,
         constructiveness: 35,
     },
 } as const;

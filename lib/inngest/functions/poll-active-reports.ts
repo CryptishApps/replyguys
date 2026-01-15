@@ -3,30 +3,30 @@ import { getSupabaseAdmin, createLogger } from "@/lib/inngest/utils";
 
 const log = createLogger("poll-active-reports");
 
-const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Cron function that runs every 5 minutes to check for active reports
+ * Cron function that runs every 3 minutes to check for active reports
  * and dispatch recurring scrape events for each one.
- * Also handles 6-hour idle timeout for stale reports.
+ * Also handles 24-hour idle timeout for stale reports.
  */
 export const pollActiveReportsFunction = inngest.createFunction(
     {
         id: "poll-active-reports",
         retries: 2,
     },
-    { cron: "*/5 * * * *" }, // Every 5 minutes
+    { cron: "*/3 * * * *" }, // Every 3 minutes
     async ({ step }) => {
         log("init", "Polling for active reports");
 
         const supabase = getSupabaseAdmin();
 
-        // Find all reports that are actively scraping
+        // Find all reports that are actively scraping or stuck in pending/setting_up
         const activeReports = await step.run("fetch-active-reports", async () => {
             const { data, error } = await supabase
                 .from("reports")
-                .select("id, conversation_id, useful_count, reply_threshold, qualified_count, last_reply_date, summary_status")
-                .eq("status", "scraping");
+                .select("id, conversation_id, useful_count, reply_threshold, qualified_count, last_reply_date, summary_status, status")
+                .in("status", ["scraping", "pending", "setting_up"]);
 
             if (error) {
                 log("fetch", "Failed to fetch active reports", { error: error.message });
@@ -54,14 +54,13 @@ export const pollActiveReportsFunction = inngest.createFunction(
 
             const timeSinceLastReply = now - lastReplyTime;
 
-            if (lastReplyTime > 0 && timeSinceLastReply > SIX_HOURS_MS) {
-                // Report has been idle for 6+ hours
+            if (lastReplyTime > 0 && timeSinceLastReply > TWENTY_FOUR_HOURS_MS) {
+                // Report has been idle for 24+ hours - monitoring period complete
                 if (report.qualified_count > 0 && report.summary_status === "pending") {
-                    log("timeout", `Report ${report.id} timed out with ${report.qualified_count} qualified replies`);
+                    log("timeout", `Report ${report.id} monitoring complete with ${report.qualified_count} qualified replies`);
                     reportsTimedOut.push(report);
                 } else if (report.qualified_count === 0) {
-                    log("timeout", `Report ${report.id} timed out with no qualified replies - marking failed`);
-                    // Will be handled separately
+                    log("timeout", `Report ${report.id} monitoring complete with no qualified replies`);
                     reportsTimedOut.push(report);
                 }
             } else {
@@ -72,18 +71,16 @@ export const pollActiveReportsFunction = inngest.createFunction(
         // Handle timed out reports
         if (reportsTimedOut.length > 0) {
             await step.run("handle-timeouts", async () => {
-                const summaryEvents: Array<{ name: "report.generate-summary"; data: { reportId: string } }> = [];
-
                 for (const report of reportsTimedOut) {
                     if (report.qualified_count > 0) {
-                        // Trigger summary generation
-                        summaryEvents.push({
-                            name: "report.generate-summary",
-                            data: { reportId: report.id },
-                        });
-                        log("timeout", `Queued summary generation for timed out report ${report.id}`);
+                        // Mark as completed but keep summary_status pending for manual trigger
+                        await supabase
+                            .from("reports")
+                            .update({ status: "completed" })
+                            .eq("id", report.id);
+                        log("timeout", `Report ${report.id} marked completed - user can generate summary from ${report.qualified_count} replies`);
                     } else {
-                        // Mark as failed - no qualified replies
+                        // No qualified replies - mark as fully completed with placeholder summary
                         await supabase
                             .from("reports")
                             .update({
@@ -91,33 +88,15 @@ export const pollActiveReportsFunction = inngest.createFunction(
                                 summary_status: "completed",
                                 summary: {
                                     executive_summary:
-                                        "This report timed out without receiving enough quality replies. " +
-                                        "The post may have had limited engagement or replies that didn't meet the quality threshold.",
-                                    quality_note: "Report timed out after 6 hours of inactivity with no qualified replies.",
+                                        "Our post monitor checks for 24 hours. As you haven't received enough quality replies, we have marked the report as complete.",
+                                    quality_note: "No qualified replies were collected during the 24-hour monitoring period.",
                                 },
                             })
                             .eq("id", report.id);
                         log("timeout", `Marked report ${report.id} as completed with no qualified replies`);
                     }
                 }
-
-                if (summaryEvents.length > 0) {
-                    return summaryEvents;
-                }
-                return [];
             });
-
-            // Send summary events if any
-            const summaryEventsToSend = reportsTimedOut
-                .filter((r) => r.qualified_count > 0)
-                .map((report) => ({
-                    name: "report.generate-summary" as const,
-                    data: { reportId: report.id },
-                }));
-
-            if (summaryEventsToSend.length > 0) {
-                await step.sendEvent("timeout-summary-events", summaryEventsToSend);
-            }
         }
 
         // Dispatch recurring scrape events for active reports

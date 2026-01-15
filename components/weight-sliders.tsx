@@ -3,7 +3,9 @@
 import { useState, useEffect } from "react";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
+import { IconLock } from "@tabler/icons-react";
 import { WEIGHT_PRESETS, type PresetName, type Weights } from "@/lib/ai/schemas";
+import { usePrevious } from "@/hooks/use-previous";
 
 interface WeightSlidersProps {
     preset: PresetName | "custom";
@@ -14,19 +16,19 @@ interface WeightSlidersProps {
 const METRIC_LABELS: Record<keyof Weights, { label: string; description: string }> = {
     actionability: {
         label: "Actionability",
-        description: "Specific steps or suggestions",
+        description: "Specific steps or suggestions toward your goal",
     },
     specificity: {
         label: "Specificity",
-        description: "Details, examples, or data",
+        description: "Concrete details that inform your goal",
     },
-    originality: {
-        label: "Originality",
-        description: "Unique perspectives or fresh insights",
+    substantiveness: {
+        label: "Substantiveness",
+        description: "Goes beyond surface reactions with reasoning",
     },
     constructiveness: {
         label: "Constructiveness",
-        description: "Adds value to the conversation",
+        description: "Advances understanding of your objective",
     },
 };
 
@@ -35,31 +37,35 @@ export function WeightSliders({
     onWeightsChange,
     disabled = false,
 }: WeightSlidersProps) {
-    const initialWeights =
-        preset === "custom"
-            ? WEIGHT_PRESETS.balanced
-            : WEIGHT_PRESETS[preset];
+    const isCustom = preset === "custom";
+    const [customWeights, setCustomWeights] = useState<Weights>(WEIGHT_PRESETS.balanced);
+    const prevPreset = usePrevious(preset);
 
-    const [weights, setWeights] = useState<Weights>(initialWeights);
+    // Display weights based on preset or custom
+    const displayWeights = isCustom ? customWeights : WEIGHT_PRESETS[preset];
 
+    // Only sync weights when preset actually changes (not on mount)
     useEffect(() => {
-        if (preset !== "custom") {
-            const presetWeights = WEIGHT_PRESETS[preset];
-            setWeights(presetWeights);
-            onWeightsChange(presetWeights);
+        if (prevPreset !== undefined && prevPreset !== preset) {
+            onWeightsChange(displayWeights);
         }
-    }, [preset, onWeightsChange]);
+    }, [preset, prevPreset, displayWeights, onWeightsChange]);
 
     const handleWeightChange = (metric: keyof Weights, value: number[]) => {
-        const newWeights = { ...weights, [metric]: value[0] };
-        setWeights(newWeights);
+        if (!isCustom) return;
+        const newWeights = { ...customWeights, [metric]: value[0] };
+        setCustomWeights(newWeights);
         onWeightsChange(newWeights);
     };
 
-    const isCustom = preset === "custom";
-
     return (
         <div className="space-y-4">
+            {!isCustom && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-2">
+                    <IconLock className="size-3.5" />
+                    <span>Select &quot;Custom&quot; above to adjust weights</span>
+                </div>
+            )}
             {(Object.keys(METRIC_LABELS) as Array<keyof Weights>).map((metric) => (
                 <div key={metric} className="space-y-2">
                     <div className="flex items-center justify-between">
@@ -70,12 +76,12 @@ export function WeightSliders({
                             {METRIC_LABELS[metric].label}
                         </Label>
                         <span className="text-sm tabular-nums text-muted-foreground">
-                            {weights[metric]}
+                            {displayWeights[metric]}
                         </span>
                     </div>
                     <Slider
                         id={metric}
-                        value={[weights[metric]]}
+                        value={[displayWeights[metric]]}
                         onValueChange={(value) => handleWeightChange(metric, value)}
                         min={0}
                         max={100}

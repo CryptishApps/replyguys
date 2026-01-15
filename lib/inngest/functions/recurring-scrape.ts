@@ -6,6 +6,7 @@ import {
     filterAndInsertReplies,
     updateReportProgress,
     createEvaluationEvents,
+    logReportActivity,
     type ReportSettings,
 } from "@/lib/inngest/utils";
 
@@ -27,6 +28,11 @@ export const recurringScrapeFunction = inngest.createFunction(
         log("init", "Starting recurring scrape", { reportId, conversationId });
 
         const supabase = getSupabaseAdmin();
+        await logReportActivity(
+            supabase,
+            { report_id: reportId, key: "scrape", message: "Checking for new replies" },
+            log
+        );
 
         // Step 1: Fetch report and check if still active
         const report = await step.run("check-report-status", async () => {
@@ -60,21 +66,11 @@ export const recurringScrapeFunction = inngest.createFunction(
             return { skipped: true, reason: `Report status is ${report.status}` };
         }
 
-        // Exit early if threshold already met
-        if (report.useful_count >= report.reply_threshold) {
-            log("check", "Threshold already met, marking completed");
-            await step.run("mark-completed", async () => {
-                const { error } = await supabase
-                    .from("reports")
-                    .update({ status: "completed" })
-                    .eq("id", reportId);
-
-                if (error) {
-                    log("check", "Failed to mark as completed", { error: error.message });
-                    throw new Error(`Failed to mark report as completed: ${error.message}`);
-                }
-            });
-            return { skipped: true, reason: "Threshold already met" };
+        // Exit early if we've reached the scrape cap (3x threshold)
+        const scrapeCap = report.reply_threshold * 3;
+        if (report.useful_count >= scrapeCap) {
+            log("check", `Reached scrape cap (${report.useful_count}/${scrapeCap}), skipping`);
+            return { skipped: true, reason: "Scrape cap reached" };
         }
 
         // Step 2: Scrape new replies using since: filter
@@ -112,7 +108,7 @@ export const recurringScrapeFunction = inngest.createFunction(
 
         // Step 4: Update report progress (using shared utility)
         const newUsefulCount = report.useful_count + insertResult.inserted;
-        const { thresholdMet } = await step.run("update-report-progress", async () => {
+        const { reachedScrapeCap } = await step.run("update-report-progress", async () => {
             return updateReportProgress(
                 supabase,
                 reportId,
@@ -125,22 +121,50 @@ export const recurringScrapeFunction = inngest.createFunction(
 
         // Step 5: Fan-out evaluation events for new replies
         if (insertResult.inserted > 0) {
-            const repliesToEvaluate = scrapeResult.replies.slice(0, insertResult.inserted);
-            log("evaluate", `Sending ${repliesToEvaluate.length} evaluation events`);
+            log("evaluate", `Sending ${insertResult.insertedReplies.length} evaluation events`);
+            await logReportActivity(
+                supabase,
+                {
+                    report_id: reportId,
+                    key: "evaluate",
+                    message: `Evaluating ${insertResult.insertedReplies.length} ${insertResult.insertedReplies.length === 1 ? "reply" : "replies"}`,
+                    meta: { count: insertResult.insertedReplies.length },
+                },
+                log
+            );
 
-            const events = createEvaluationEvents(repliesToEvaluate, reportId, report.min_length);
+            const events = createEvaluationEvents(insertResult.insertedReplies, reportId, report.min_length);
             await step.sendEvent("evaluation-events", events);
 
             log("evaluate", "Evaluation events sent");
         }
 
-        // Note: No more sleep/scheduling - the poll-active-reports cron handles this
+        // Step 6: If we got max replies (100), inserted some, and filtered some out, chain another scrape
+        // This continues scraping when there are more replies available
+        // Skip if we've reached the scrape cap (3x threshold) or inserted nothing
+        const scrapedMax = scrapeResult.replies.length >= 100;
+        const insertedSome = insertResult.inserted > 0;
+        const filteredSome = insertResult.inserted < scrapeResult.replies.length;
+
+        if (!reachedScrapeCap && scrapedMax && insertedSome && filteredSome) {
+            log("queue", "Got max replies and filtered some - queuing another recurring scrape");
+            await logReportActivity(
+                supabase,
+                { report_id: reportId, key: "scrape", message: "Fetching more replies..." },
+                log
+            );
+            await step.sendEvent("chain-recurring-scrape", {
+                name: "report.scrape.recurring",
+                data: { reportId, conversationId },
+            });
+        }
 
         const result = {
             newRepliesFound: scrapeResult.replies.length,
             repliesInserted: insertResult.inserted,
             totalUsefulCount: newUsefulCount,
-            thresholdMet,
+            reachedScrapeCap,
+            chainedRecurring: !reachedScrapeCap && scrapedMax && insertedSome && filteredSome,
         };
 
         log("done", "Recurring scrape finished", result);

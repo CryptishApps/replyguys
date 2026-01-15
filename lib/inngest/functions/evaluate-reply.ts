@@ -11,14 +11,16 @@ interface ReportContext {
     persona: string | null;
     weights: Weights;
     reply_threshold: number;
-    qualified_count: number;
 }
 
 export const evaluateReplyFunction = inngest.createFunction(
     {
         id: "evaluate-reply",
         retries: 2,
-        concurrency: { limit: 30 }, // Conservative to stay under 1900/min rate limit
+        throttle: {
+            limit: 1000, // 2000 RPM is the limit for Gemini Flash 2
+            period: "1m",
+        }
     },
     { event: "reply.evaluate" },
     async ({ event, step }) => {
@@ -45,7 +47,7 @@ export const evaluateReplyFunction = inngest.createFunction(
             const [reportResult, replyResult] = await Promise.all([
                 supabase
                     .from("reports")
-                    .select("original_tweet_text, goal, persona, weights, reply_threshold, qualified_count")
+                    .select("original_tweet_text, goal, persona, weights, reply_threshold")
                     .eq("id", reportId)
                     .single(),
                 supabase
@@ -91,77 +93,90 @@ export const evaluateReplyFunction = inngest.createFunction(
             return evaluateReply(evalContext, replyToEval, context.report.weights);
         });
 
-        // Update reply with evaluation results
-        await step.run("update-reply", async () => {
-            const { error } = await supabase
+        // Update reply with evaluation results - returns whether update succeeded
+        const updateSucceeded = await step.run("update-reply", async () => {
+            const { error, data } = await supabase
                 .from("replies")
                 .update({
+                    goal_relevance: evaluation.goal_relevance,
                     actionability: evaluation.actionability,
                     specificity: evaluation.specificity,
-                    originality: evaluation.originality,
+                    substantiveness: evaluation.substantiveness,
                     constructiveness: evaluation.constructiveness,
                     weighted_score: evaluation.weightedScore,
                     tags: evaluation.tags,
                     mini_summary: evaluation.mini_summary,
                     to_be_included: evaluation.to_be_included,
-                    is_useful: evaluation.to_be_included, // Keep is_useful in sync
+                    is_useful: evaluation.to_be_included,
                     evaluation_status: "evaluated",
                 })
-                .eq("id", replyId);
+                .eq("id", replyId)
+                .select("id");
 
             if (error) {
                 throw new Error(`Failed to update reply: ${error.message}`);
             }
 
+            const rowsUpdated = data?.length ?? 0;
+            if (rowsUpdated === 0) {
+                log("warning", `Update matched 0 rows for reply ${replyId}`);
+                return false;
+            }
+
             log("evaluate", `Reply ${replyId} evaluated`, {
                 toBeIncluded: evaluation.to_be_included,
                 weightedScore: evaluation.weightedScore,
-                tags: evaluation.tags,
             });
+
+            return true;
         });
 
-        // If qualified, increment count and check for summary trigger
-        if (evaluation.to_be_included) {
-            const shouldTriggerSummary = await step.run("increment-qualified", async () => {
-                // Atomically increment qualified_count
-                const { data, error } = await supabase.rpc("increment_qualified_count", {
-                    report_id: reportId,
-                });
+        // If qualified AND update succeeded, check if we should trigger summary
+        if (evaluation.to_be_included && updateSucceeded) {
+            const shouldTriggerSummary = await step.run("check-threshold", async () => {
+                // Count actual qualified replies (source of truth)
+                const { count, error: countError } = await supabase
+                    .from("replies")
+                    .select("id", { count: "exact", head: true })
+                    .eq("report_id", reportId)
+                    .eq("to_be_included", true);
 
-                if (error) {
-                    // Fallback to non-atomic increment if RPC doesn't exist
-                    log("qualified", "RPC not available, using fallback increment");
-                    const { data: report, error: fetchError } = await supabase
-                        .from("reports")
-                        .select("qualified_count, reply_threshold")
-                        .eq("id", reportId)
-                        .single();
-
-                    if (fetchError) {
-                        throw new Error(`Failed to fetch report: ${fetchError.message}`);
-                    }
-
-                    const newCount = (report.qualified_count || 0) + 1;
-                    await supabase
-                        .from("reports")
-                        .update({ qualified_count: newCount })
-                        .eq("id", reportId);
-
-                    return newCount >= report.reply_threshold;
+                if (countError) {
+                    log("warning", "Failed to count qualified replies", { error: countError.message });
+                    return false;
                 }
 
-                // Check if threshold met
+                // Check report status and threshold
                 const { data: report } = await supabase
                     .from("reports")
-                    .select("qualified_count, reply_threshold")
+                    .select("reply_threshold, status")
                     .eq("id", reportId)
                     .single();
 
-                return report && report.qualified_count >= report.reply_threshold;
+                if (!report || report.status !== "scraping") {
+                    return false;
+                }
+
+                const qualifiedCount = count ?? 0;
+                const crossedThreshold = qualifiedCount >= report.reply_threshold;
+
+                log("qualified", `Qualified count: ${qualifiedCount}/${report.reply_threshold}`, {
+                    crossedThreshold,
+                });
+
+                return crossedThreshold;
             });
 
             if (shouldTriggerSummary) {
-                log("qualified", `Threshold met for report ${reportId}, triggering summary`);
+                log("qualified", `Threshold met for report ${reportId}, marking completed and triggering summary`);
+
+                await step.run("mark-completed", async () => {
+                    await supabase
+                        .from("reports")
+                        .update({ status: "completed" })
+                        .eq("id", reportId);
+                });
+
                 await step.sendEvent("trigger-summary", {
                     name: "report.generate-summary",
                     data: { reportId },

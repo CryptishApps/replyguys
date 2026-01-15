@@ -15,17 +15,18 @@ import {
     IconChecklist,
     IconChartBar,
     IconMessageCircle,
-    IconSparkles,
     IconAlertCircle,
     IconStar,
     IconLoader2,
 } from "@tabler/icons-react";
 import type { ReportSummary as ReportSummaryType } from "@/lib/ai/schemas";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 interface ReportSummaryProps {
     summary: ReportSummaryType;
     summaryStatus: "pending" | "generating" | "completed" | "failed";
     qualifiedCount?: number;
+    isMonitoringComplete?: boolean;
     onGenerateSummary?: () => Promise<{ success: boolean; error?: string }>;
 }
 
@@ -42,7 +43,7 @@ const sentimentColors = {
     neutral: "bg-gray-500/10 text-gray-600 border-gray-500/20",
 };
 
-export function ReportSummary({ summary, summaryStatus, qualifiedCount = 0, onGenerateSummary }: ReportSummaryProps) {
+export function ReportSummary({ summary, summaryStatus, qualifiedCount = 0, isMonitoringComplete = false, onGenerateSummary }: ReportSummaryProps) {
     const [isPending, startTransition] = useTransition();
 
     const handleGenerateSummary = () => {
@@ -53,18 +54,17 @@ export function ReportSummary({ summary, summaryStatus, qualifiedCount = 0, onGe
     };
 
     if (summaryStatus === "pending") {
+        const description = isMonitoringComplete && qualifiedCount > 0
+            ? `Your report monitored for 24 hours. Generate a summary from the ${qualifiedCount} qualified replies collected.`
+            : qualifiedCount > 0
+                ? `${qualifiedCount} qualified replies ready for analysis`
+                : "Summary will be generated once enough qualified replies are collected";
+
         return (
             <Card>
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <IconSparkles className="size-5" />
-                        AI Summary
-                    </CardTitle>
-                    <CardDescription>
-                        {qualifiedCount > 0
-                            ? `${qualifiedCount} qualified replies ready for analysis`
-                            : "Summary will be generated once enough qualified replies are collected"}
-                    </CardDescription>
+                    <CardTitle>Summary</CardTitle>
+                    <CardDescription>{description}</CardDescription>
                 </CardHeader>
                 {qualifiedCount > 0 && onGenerateSummary && (
                     <CardContent>
@@ -79,7 +79,6 @@ export function ReportSummary({ summary, summaryStatus, qualifiedCount = 0, onGe
                                 </>
                             ) : (
                                 <>
-                                    <IconSparkles className="size-4" />
                                     Generate Summary Now
                                 </>
                             )}
@@ -95,8 +94,8 @@ export function ReportSummary({ summary, summaryStatus, qualifiedCount = 0, onGe
             <Card>
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                        <IconSparkles className="size-5 animate-pulse" />
-                        Generating Summary...
+                        <IconLoader2 className="size-5 animate-spin" />
+                        Generating summary...
                     </CardTitle>
                     <CardDescription>
                         Analyzing qualified replies and generating insights
@@ -126,21 +125,33 @@ export function ReportSummary({ summary, summaryStatus, qualifiedCount = 0, onGe
         <div className="space-y-6">
             {/* Executive Summary */}
             <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <IconSparkles className="size-5 text-primary" />
-                        Executive Summary
-                    </CardTitle>
+                <CardHeader className="pb-3">
+                    <div className="flex flex-col gap-1">
+                        <CardTitle>Executive Summary</CardTitle>
+                        <CardDescription>
+                            A high-level readout of what mattered most in the replies.
+                        </CardDescription>
+                    </div>
                 </CardHeader>
-                <CardContent>
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
-                        {summary.executive_summary.split("\n\n").map((paragraph, i) => (
-                            <p key={i}>{paragraph}</p>
-                        ))}
+                <CardContent className="pt-0">
+                    <div className="rounded-xl border bg-muted/30 p-5">
+                        <div className="space-y-4">
+                            {summary.executive_summary.split("\n\n").map((paragraph, i) => (
+                                <p
+                                    key={i}
+                                    className="text-[15px] leading-7 text-foreground/90"
+                                >
+                                    {paragraph}
+                                </p>
+                            ))}
+                        </div>
                     </div>
                     {summary.quality_note && (
-                        <div className="mt-4 p-3 rounded-lg bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 text-sm">
-                            <strong>Note:</strong> {summary.quality_note}
+                        <div className="mt-4 flex items-start gap-3 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-yellow-900 dark:text-yellow-100">
+                            <Badge variant="outline" className="border-yellow-500/30 bg-yellow-500/10 text-yellow-700 dark:text-yellow-300">
+                                Note
+                            </Badge>
+                            <p className="leading-relaxed">{summary.quality_note}</p>
                         </div>
                     )}
                 </CardContent>
@@ -350,9 +361,18 @@ export function ReportSummary({ summary, summaryStatus, qualifiedCount = 0, onGe
                                                         {gem.follower_count.toLocaleString()} followers
                                                     </span>
                                                     {gem.is_big_little_guy && (
-                                                        <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-xs">
-                                                            Big Little Guy
-                                                        </Badge>
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                                <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-xs">
+                                                                    Big Little Guy
+                                                                </Badge>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent>
+                                                                <p className="text-xs text-foreground">
+                                                                    Packs a punch for someone with fewer followers.
+                                                                </p>
+                                                            </TooltipContent>
+                                                        </Tooltip>
                                                     )}
                                                 </div>
                                                 <p className="text-sm mt-2">{gem.insight}</p>

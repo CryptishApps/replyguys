@@ -118,19 +118,20 @@ export function ReportPicker({ reports }: ReportPickerProps) {
                     </div>
                 )}
 
-                <DropdownMenuSeparator />
-
                 {/* Show All */}
                 {!isOnDashboard && (
-                    <DropdownMenuItem asChild>
-                        <Link
-                            href="/dashboard"
-                            className="w-full flex items-center gap-2 text-muted-foreground"
-                        >
-                            <IconExternalLink className="size-4" />
-                            Show All Reports
-                        </Link>
-                    </DropdownMenuItem>
+                    <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem asChild>
+                            <Link
+                                href="/dashboard"
+                                className="w-full flex items-center gap-2 text-muted-foreground"
+                            >
+                                <IconExternalLink className="size-4" />
+                                Show All Reports
+                            </Link>
+                        </DropdownMenuItem>
+                    </>
                 )}
             </DropdownMenuContent>
         </DropdownMenu>

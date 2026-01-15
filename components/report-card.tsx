@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -17,7 +20,28 @@ interface ReportCardProps {
     originalAuthorAvatar?: string | null;
     originalTweetText?: string | null;
     replyThreshold?: number;
-    usefulCount?: number;
+    qualifiedCount?: number;
+    qualityIndex?: number | null;
+    title?: string | null;
+    index?: number;
+}
+
+interface ReportCardListProps {
+    reports: Array<{
+        id: string;
+        x_post_url: string;
+        conversation_id: string;
+        status: ReportStatus;
+        reply_count: number;
+        created_at: string;
+        original_author_username: string | null;
+        original_author_avatar: string | null;
+        original_tweet_text: string | null;
+        reply_threshold: number;
+        qualified_count: number;
+        quality_index: number | null;
+        title: string | null;
+    }>;
 }
 
 const statusConfig: Record<ReportStatus, { label: string; variant: "secondary" | "default" | "destructive" }> = {
@@ -57,19 +81,30 @@ export function ReportCard({
     originalAuthorAvatar,
     originalTweetText,
     replyThreshold = 100,
-    usefulCount = 0,
+    qualifiedCount = 0,
+    qualityIndex,
+    title,
+    index = 0,
 }: ReportCardProps) {
     const fallbackUsername = extractUsernameFromUrl(xPostUrl);
     const displayUsername = originalAuthorUsername || fallbackUsername;
     const statusInfo = statusConfig[status];
     const timeAgo = formatTimeAgo(createdAt);
 
-    const disregardedCount = replyCount - usefulCount;
-    const progressPercent = replyThreshold > 0 ? Math.min(100, (usefulCount / replyThreshold) * 100) : 0;
+    const progressPercent = replyThreshold > 0 ? Math.min(100, (qualifiedCount / replyThreshold) * 100) : 0;
     const isLoading = status === "setting_up" || status === "pending" || status === "scraping";
 
     return (
-        <div className="flex flex-col bg-card text-card-foreground rounded-lg border border-border overflow-hidden transition-colors hover:border-primary/40">
+        <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ 
+                duration: 0.4, 
+                delay: index * 0.08,
+                ease: [0.25, 0.46, 0.45, 0.94]
+            }}
+            className="flex flex-col bg-card text-card-foreground rounded-lg border border-border overflow-hidden transition-colors hover:border-primary/40"
+        >
             {/* Tweet-like Header */}
             <div className="flex items-start justify-between p-4 pb-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -93,8 +128,13 @@ export function ReportCard({
                 </Badge>
             </div>
 
-            {/* Original tweet text snippet or loading skeleton */}
-            <div className="px-4 pb-4">
+            {/* Title and tweet text */}
+            <div className="px-4 pb-4 space-y-2">
+                {title && (
+                    <p className="text-sm font-medium line-clamp-1">
+                        {title}
+                    </p>
+                )}
                 {originalTweetText ? (
                     <p className="text-sm text-muted-foreground line-clamp-2">
                         {originalTweetText}
@@ -115,7 +155,7 @@ export function ReportCard({
             {isLoading && (
                 <div className="px-4 pb-4">
                     <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                        <span>{usefulCount} / {replyThreshold}</span>
+                        <span>{qualifiedCount} / {replyThreshold}</span>
                         <span>{Math.round(progressPercent)}%</span>
                     </div>
                     <Progress value={progressPercent} className="h-1.5" />
@@ -129,12 +169,14 @@ export function ReportCard({
                     <p className="text-xs text-muted-foreground">Total</p>
                 </div>
                 <div className="py-3 px-2 border-x border-border">
-                    <p className="font-semibold text-foreground">{usefulCount}</p>
-                    <p className="text-xs text-muted-foreground">Useful</p>
+                    <p className="font-semibold text-foreground">{qualifiedCount}</p>
+                    <p className="text-xs text-muted-foreground">Qualified</p>
                 </div>
                 <div className="py-3 px-2">
-                    <p className="font-semibold text-foreground">{disregardedCount > 0 ? disregardedCount : 0}</p>
-                    <p className="text-xs text-muted-foreground">Filtered</p>
+                    <p className="font-semibold text-foreground">
+                        {qualityIndex !== null && qualityIndex !== undefined ? qualityIndex : "—"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Quality</p>
                 </div>
             </div>
 
@@ -146,6 +188,32 @@ export function ReportCard({
                     </Link>
                 </Button>
             </div>
+        </motion.div>
+    );
+}
+
+export function ReportCardList({ reports }: ReportCardListProps) {
+    return (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {reports.map((report, index) => (
+                <ReportCard
+                    key={report.id}
+                    id={report.id}
+                    xPostUrl={report.x_post_url}
+                    conversationId={report.conversation_id}
+                    status={report.status}
+                    replyCount={report.reply_count}
+                    createdAt={report.created_at}
+                    originalAuthorUsername={report.original_author_username}
+                    originalAuthorAvatar={report.original_author_avatar}
+                    originalTweetText={report.original_tweet_text}
+                    replyThreshold={report.reply_threshold}
+                    qualifiedCount={report.qualified_count}
+                    qualityIndex={report.quality_index}
+                    title={report.title}
+                    index={index}
+                />
+            ))}
         </div>
     );
 }

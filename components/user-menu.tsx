@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { IconChevronDown, IconLogout, IconUser } from "@tabler/icons-react";
+import { IconChevronDown, IconDashboard, IconLogout, IconUser } from "@tabler/icons-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -55,8 +55,8 @@ export function UserMenu({ username, avatarUrl }: UserMenuProps) {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
                     <Link href="/dashboard" className="w-full flex items-center gap-2">
-                        <IconUser className="size-4" />
-                        Account
+                        <IconDashboard className="size-4" />
+                        Dashboard
                     </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />

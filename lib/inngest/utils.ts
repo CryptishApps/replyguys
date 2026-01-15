@@ -35,12 +35,62 @@ export function createLogger(functionName: string) {
     };
 }
 
+type ReportActivityInsert = {
+    report_id: string;
+    key: string;
+    message: string;
+    meta?: unknown;
+};
+
+/**
+ * Best-effort UI activity log. This should never fail the Inngest function.
+ * It gives the frontend a realtime "something is happening" feed.
+ */
+export async function logReportActivity(
+    supabase: SupabaseClient,
+    activity: ReportActivityInsert,
+    log?: (step: string, message: string, data?: unknown) => void
+) {
+    try {
+        const { error } = await supabase.from("report_activity").insert({
+            report_id: activity.report_id,
+            key: activity.key,
+            message: activity.message,
+            meta: activity.meta ?? null,
+        });
+
+        if (error) {
+            log?.("activity", "Failed to write report activity", { error: error.message, activity });
+        }
+    } catch (err) {
+        log?.("activity", "Failed to write report activity (exception)", { err, activity });
+    }
+}
+
+/**
+ * Bot usernames to exclude from replies.
+ * Note: These are also excluded at the query level (-from:grok) in apify.ts,
+ * but we keep this as a backup filter in case any slip through.
+ */
+const BOT_USERNAMES = new Set(["grok"]);
+
+/**
+ * Filters out replies from known bot accounts (backup filter).
+ */
+export function filterOutBots(replies: ScrapedTweet[]): ScrapedTweet[] {
+    return replies.filter((reply) => {
+        const username = reply.author?.userName?.toLowerCase();
+        return username && !BOT_USERNAMES.has(username);
+    });
+}
+
 /**
  * Maps scraped tweets to the database reply format.
+ * Ensures IDs are strings to avoid precision loss with large tweet IDs.
  */
 export function mapToReplyRecords(replies: ScrapedTweet[], reportId: string) {
     return replies.map((reply) => ({
-        id: reply.id,
+        id: String(reply.id),
         report_id: reportId,
         username: reply.author?.userName ?? "unknown",
         x_user_id: reply.author?.id,
@@ -86,7 +136,7 @@ export interface ReportSettings {
 export interface FilterAndInsertResult {
     inserted: number;
     lastReplyDate: string | null;
-    filteredReplies: ScrapedTweet[];
+    insertedReplies: ScrapedTweet[];
 }
 
 type LogFn = (step: string, message: string, data?: unknown) => void;
@@ -104,17 +154,35 @@ export async function filterAndInsertReplies(
 ): Promise<FilterAndInsertResult> {
     if (replies.length === 0) {
         log("filter", "No replies to process");
+        await logReportActivity(
+            supabase,
+            { report_id: reportId, key: "scrape", message: "No new replies found" },
+            log
+        );
         return {
             inserted: 0,
             lastReplyDate: settings.last_reply_date ?? null,
-            filteredReplies: [],
+            insertedReplies: [],
         };
     }
 
     log("filter", `Processing ${replies.length} replies`);
+    await logReportActivity(
+        supabase,
+        {
+            report_id: reportId,
+            key: "scrape",
+            message: `Processing ${replies.length} ${replies.length === 1 ? "reply" : "replies"}`,
+            meta: { found: replies.length },
+        },
+        log
+    );
 
     // Apply client-side filters
-    let filteredReplies = filterRepliesByBlueOnly(replies, settings.blue_only);
+    let filteredReplies = filterOutBots(replies);
+    log("filter", `After bot filter: ${filteredReplies.length} replies remain`);
+
+    filteredReplies = filterRepliesByBlueOnly(filteredReplies, settings.blue_only);
     filteredReplies = filterRepliesByMinLength(filteredReplies, settings.min_length);
     filteredReplies = filterRepliesByMinFollowers(
         filteredReplies,
@@ -122,17 +190,30 @@ export async function filterAndInsertReplies(
     );
 
     log("filter", `After client-side filters: ${filteredReplies.length} replies remain`);
+    const filteredOut = Math.max(0, replies.length - filteredReplies.length);
+    if (filteredOut > 0) {
+        await logReportActivity(
+            supabase,
+            {
+                report_id: reportId,
+                key: "filter",
+                message: `Filtered ${filteredOut} low-signal ${filteredOut === 1 ? "reply" : "replies"}`,
+                meta: { filteredOut, kept: filteredReplies.length },
+            },
+            log
+        );
+    }
 
-    // Calculate how many we can insert to reach threshold
-    const remaining = settings.reply_threshold - settings.useful_count;
-    const repliesToInsert = filteredReplies.slice(0, remaining);
+    // Insert all filtered replies - the scrape cap (3x threshold) limits total volume,
+    // and evaluate-reply handles completion when qualified_count meets threshold
+    const repliesToInsert = filteredReplies;
 
-    log("filter", `Will insert ${repliesToInsert.length} replies (threshold: ${settings.reply_threshold}, current: ${settings.useful_count}, remaining: ${remaining})`);
+    log("filter", `Will insert ${repliesToInsert.length} replies`);
 
     const lastReplyDate = getLatestReplyDate(replies, settings.last_reply_date ?? null);
 
     if (repliesToInsert.length === 0) {
-        return { inserted: 0, lastReplyDate, filteredReplies };
+        return { inserted: 0, lastReplyDate, insertedReplies: [] };
     }
 
     const replyRecords = mapToReplyRecords(repliesToInsert, reportId);
@@ -149,13 +230,26 @@ export async function filterAndInsertReplies(
     }
 
     log("insert", `Successfully inserted ${replyRecords.length} replies`);
+    await logReportActivity(
+        supabase,
+        {
+            report_id: reportId,
+            key: "insert",
+            message: `Saved ${replyRecords.length} ${replyRecords.length === 1 ? "reply" : "replies"} for evaluation`,
+            meta: { inserted: replyRecords.length },
+        },
+        log
+    );
 
-    return { inserted: repliesToInsert.length, lastReplyDate, filteredReplies };
+    return { inserted: repliesToInsert.length, lastReplyDate, insertedReplies: repliesToInsert };
 }
 
 /**
  * Updates the report progress in the database.
- * Sets status to "completed" if threshold is met, otherwise keeps it as "scraping".
+ * Status is always kept as "scraping" - only evaluate-reply triggers completion
+ * when qualified_count meets threshold.
+ * 
+ * Returns reachedScrapeCap if we've scraped 3x the threshold (safety limit).
  */
 export async function updateReportProgress(
     supabase: SupabaseClient,
@@ -164,18 +258,20 @@ export async function updateReportProgress(
     threshold: number,
     lastReplyDate: string | null,
     log: LogFn
-): Promise<{ thresholdMet: boolean }> {
-    const thresholdMet = newUsefulCount >= threshold;
+): Promise<{ reachedScrapeCap: boolean }> {
+    // Safety cap: stop scraping after 3x threshold to prevent infinite loops
+    const scrapeCap = threshold * 3;
+    const reachedScrapeCap = newUsefulCount >= scrapeCap;
 
-    log("progress", `Updating progress: ${newUsefulCount}/${threshold}`, {
-        thresholdMet,
+    log("progress", `Updating progress: ${newUsefulCount} scraped (cap: ${scrapeCap})`, {
+        reachedScrapeCap,
         lastReplyDate,
     });
 
     const { error } = await supabase
         .from("reports")
         .update({
-            status: thresholdMet ? "completed" : "scraping",
+            status: "scraping", // Always stay scraping - evaluate-reply handles completion
             useful_count: newUsefulCount,
             reply_count: newUsefulCount,
             last_reply_date: lastReplyDate,
@@ -187,9 +283,19 @@ export async function updateReportProgress(
         throw new Error(`Failed to update report progress: ${error.message}`);
     }
 
-    log("progress", `Status updated to: ${thresholdMet ? "completed" : "scraping"}`);
+    log("progress", `Progress updated, status remains: scraping`);
+    await logReportActivity(
+        supabase,
+        {
+            report_id: reportId,
+            key: "progress",
+            message: `Updated report counts (${Math.min(newUsefulCount, threshold)}/${threshold})`,
+            meta: { usefulCount: newUsefulCount, threshold },
+        },
+        log
+    );
 
-    return { thresholdMet };
+    return { reachedScrapeCap };
 }
 
 export interface EvaluationEventData {

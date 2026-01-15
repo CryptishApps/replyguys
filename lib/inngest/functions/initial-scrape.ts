@@ -1,5 +1,5 @@
 import { inngest } from "@/lib/inngest/client";
-import { scrapeConversation } from "@/lib/apify";
+import { scrapeConversation, type OriginalTweet } from "@/lib/apify";
 import { generateReportTitle } from "@/lib/gemini";
 import {
     getSupabaseAdmin,
@@ -7,6 +7,7 @@ import {
     filterAndInsertReplies,
     updateReportProgress,
     createEvaluationEvents,
+    logReportActivity,
     type ReportSettings,
 } from "@/lib/inngest/utils";
 
@@ -28,6 +29,11 @@ export const initialScrapeFunction = inngest.createFunction(
         // Step 1: Set status to setting_up and fetch report settings
         const settings = await step.run("setup-and-fetch-settings", async () => {
             log("setup", "Setting status to setting_up and fetching settings");
+            await logReportActivity(
+                supabase,
+                { report_id: reportId, key: "setup", message: "Preparing your report" },
+                log
+            );
 
             const { error: updateError } = await supabase
                 .from("reports")
@@ -54,21 +60,81 @@ export const initialScrapeFunction = inngest.createFunction(
             return data as ReportSettings;
         });
 
-        // Step 2: Scrape conversation (original tweet + replies in ONE call)
+        // Step 2: Scrape conversation (original tweet + replies in parallel)
+        // The callback fires as soon as the original tweet is fetched,
+        // saving it to DB immediately without waiting for replies
         const scrapeResult = await step.run("scrape-conversation", async () => {
             log("scrape", "Starting Apify scrape", {
                 conversationId,
                 blueOnly: settings.blue_only,
                 minFollowers: settings.min_followers,
             });
+            await logReportActivity(
+                supabase,
+                { report_id: reportId, key: "scrape", message: "Looking up initial posts" },
+                log
+            );
 
-            const result = await scrapeConversation(conversationId, {
-                sort: "Oldest",
-                maxItems: 100,
-                blueOnly: settings.blue_only,
-                minFollowers: settings.min_followers ?? undefined,
-                includeOriginalTweet: true,
-            });
+            const result = await scrapeConversation(
+                conversationId,
+                {
+                    sort: "Oldest",
+                    maxItems: 100,
+                    blueOnly: settings.blue_only,
+                    minFollowers: settings.min_followers ?? undefined,
+                    includeOriginalTweet: true,
+                },
+                {
+                    // This callback fires immediately when original tweet is fetched,
+                    // while replies are still being scraped
+                    onOriginalTweetFetched: async (tweet: OriginalTweet) => {
+                        log("callback", "Original tweet fetched, saving immediately", {
+                            author: `@${tweet.author.userName}`,
+                        });
+                        await logReportActivity(
+                            supabase,
+                            {
+                                report_id: reportId,
+                                key: "scrape",
+                                message: `Found your post by @${tweet.author.userName}`,
+                                meta: { author: tweet.author.userName },
+                            },
+                            log
+                        );
+
+                        // Save original tweet data immediately
+                        const { error: tweetError } = await supabase
+                            .from("reports")
+                            .update({
+                                original_tweet_text: tweet.text,
+                                original_author_username: tweet.author.userName,
+                                original_author_avatar: tweet.author.profilePicture,
+                            })
+                            .eq("id", reportId);
+
+                        if (tweetError) {
+                            log("callback", "Failed to store original tweet", { error: tweetError.message });
+                        } else {
+                            log("callback", "Original tweet saved - UI should update now");
+                        }
+
+                        // Also generate and save title immediately
+                        const title = await generateReportTitle(tweet.text);
+                        if (title) {
+                            const { error: titleError } = await supabase
+                                .from("reports")
+                                .update({ title })
+                                .eq("id", reportId);
+
+                            if (titleError) {
+                                log("callback", "Failed to store title", { error: titleError.message });
+                            } else {
+                                log("callback", "Title saved", { title });
+                            }
+                        }
+                    },
+                }
+            );
 
             log("scrape", "Scrape completed", {
                 originalTweetFound: !!result.originalTweet,
@@ -78,61 +144,7 @@ export const initialScrapeFunction = inngest.createFunction(
             return result;
         });
 
-        // Step 3: Store original post data (if found)
-        if (scrapeResult.originalTweet) {
-            await step.run("store-original-post", async () => {
-                const tweet = scrapeResult.originalTweet!;
-                log("store-original", "Storing original tweet", {
-                    author: `@${tweet.author.userName}`,
-                    textLength: tweet.text.length,
-                });
-
-                const { error } = await supabase
-                    .from("reports")
-                    .update({
-                        original_tweet_text: tweet.text,
-                        original_author_username: tweet.author.userName,
-                        original_author_avatar: tweet.author.profilePicture,
-                    })
-                    .eq("id", reportId);
-
-                if (error) {
-                    log("store-original", "Failed to store original tweet", { error: error.message });
-                    throw new Error(`Failed to store original tweet: ${error.message}`);
-                }
-
-                log("store-original", "Original tweet stored successfully");
-            });
-
-            // Step 3b: Generate and store title (separate step, non-blocking)
-            await step.run("generate-title", async () => {
-                const tweet = scrapeResult.originalTweet!;
-                const title = await generateReportTitle(tweet.text);
-
-                if (!title) {
-                    log("generate-title", "No title generated, skipping");
-                    return;
-                }
-
-                log("generate-title", "Generated title", { title });
-
-                const { error } = await supabase
-                    .from("reports")
-                    .update({ title })
-                    .eq("id", reportId);
-
-                if (error) {
-                    // Don't throw - title is nice-to-have, not critical
-                    log("generate-title", "Failed to store title (non-fatal)", { error: error.message });
-                } else {
-                    log("generate-title", "Title stored successfully");
-                }
-            });
-        } else {
-            log("scrape", "No original tweet found - may be filtered by blue_only or other settings");
-        }
-
-        // Step 4: Filter and insert replies (using shared utility)
+        // Step 3: Filter and insert replies (using shared utility)
         const insertResult = await step.run("filter-and-insert-replies", async () => {
             return filterAndInsertReplies(
                 supabase,
@@ -143,9 +155,9 @@ export const initialScrapeFunction = inngest.createFunction(
             );
         });
 
-        // Step 5: Update report progress (using shared utility)
+        // Step 4: Update report progress (using shared utility)
         const newUsefulCount = settings.useful_count + insertResult.inserted;
-        const { thresholdMet } = await step.run("update-report-progress", async () => {
+        const { reachedScrapeCap } = await step.run("update-report-progress", async () => {
             return updateReportProgress(
                 supabase,
                 reportId,
@@ -156,24 +168,52 @@ export const initialScrapeFunction = inngest.createFunction(
             );
         });
 
-        // Step 6: Fan-out evaluation events for inserted replies
+        // Step 5: Fan-out evaluation events for inserted replies
         if (insertResult.inserted > 0) {
-            const repliesToEvaluate = scrapeResult.replies.slice(0, insertResult.inserted);
-            log("evaluate", `Sending ${repliesToEvaluate.length} evaluation events`);
+            log("evaluate", `Sending ${insertResult.insertedReplies.length} evaluation events`);
+            await logReportActivity(
+                supabase,
+                {
+                    report_id: reportId,
+                    key: "evaluate",
+                    message: `Evaluating ${insertResult.insertedReplies.length} ${insertResult.insertedReplies.length === 1 ? "reply" : "replies"}`,
+                    meta: { count: insertResult.insertedReplies.length },
+                },
+                log
+            );
 
-            const events = createEvaluationEvents(repliesToEvaluate, reportId, settings.min_length);
+            const events = createEvaluationEvents(insertResult.insertedReplies, reportId, settings.min_length);
             await step.sendEvent("evaluation-events", events);
 
             log("evaluate", "Evaluation events sent");
         }
 
-        // Note: No more sleep/scheduling - the poll-active-reports cron handles recurring scrapes
+        // Step 6: If we got max replies (100), inserted some, and filtered some out, queue recurring scrape
+        // This avoids waiting for the cron when we know there are more replies available
+        // Skip if we've reached the scrape cap (3x threshold) or inserted nothing
+        const scrapedMax = scrapeResult.replies.length >= 100;
+        const insertedSome = insertResult.inserted > 0;
+        const filteredSome = insertResult.inserted < scrapeResult.replies.length;
+
+        if (!reachedScrapeCap && scrapedMax && insertedSome && filteredSome) {
+            log("queue", "Got max replies and filtered some - queuing immediate recurring scrape");
+            await logReportActivity(
+                supabase,
+                { report_id: reportId, key: "scrape", message: "Fetching more replies..." },
+                log
+            );
+            await step.sendEvent("immediate-recurring-scrape", {
+                name: "report.scrape.recurring",
+                data: { reportId, conversationId },
+            });
+        }
 
         const result = {
             repliesScraped: scrapeResult.replies.length,
             repliesInserted: insertResult.inserted,
-            thresholdMet,
+            reachedScrapeCap,
             originalTweetFetched: !!scrapeResult.originalTweet,
+            queuedRecurring: !reachedScrapeCap && scrapedMax && insertedSome && filteredSome,
         };
 
         log("done", "Initial scrape finished", result);

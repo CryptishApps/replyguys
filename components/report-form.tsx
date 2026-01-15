@@ -23,7 +23,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { WeightSliders } from "@/components/weight-sliders";
-import { IconLoader2, IconSettings, IconAdjustments } from "@tabler/icons-react";
+import { IconLoader2, IconSettings, IconAdjustments, IconFilter } from "@tabler/icons-react";
 import { WEIGHT_PRESETS, type PresetName, type Weights } from "@/lib/ai/schemas";
 
 type PresetOption = PresetName | "custom";
@@ -73,6 +73,8 @@ export function ReportForm() {
                             placeholder="https://x.com/username/status/1234567890"
                             required
                             disabled={isPending}
+                            pattern="https?://(www\.|mobile\.)?(x\.com|twitter\.com)/[a-zA-Z0-9_]+/status/\d+.*"
+                            title="Enter an X/Twitter post URL (e.g., https://x.com/username/status/1234567890)"
                         />
                         <FieldDescription>
                             Paste the full URL of the X post you want to analyze
@@ -146,18 +148,13 @@ export function ReportForm() {
                                         <SelectContent>
                                             {PRESET_OPTIONS.map((option) => (
                                                 <SelectItem key={option.value} value={option.value}>
-                                                    <div className="flex flex-col">
-                                                        <span>{option.label}</span>
-                                                        <span className="text-xs text-muted-foreground">
-                                                            {option.description}
-                                                        </span>
-                                                    </div>
+                                                    {option.label}
                                                 </SelectItem>
                                             ))}
                                         </SelectContent>
                                     </Select>
                                     <FieldDescription>
-                                        Choose how replies are scored and ranked
+                                        {PRESET_OPTIONS.find((o) => o.value === preset)?.description}
                                     </FieldDescription>
                                 </Field>
 
@@ -172,8 +169,8 @@ export function ReportForm() {
                         <AccordionItem value="advanced" className="border-none">
                             <AccordionTrigger className="text-sm py-2 hover:no-underline">
                                 <span className="flex items-center gap-2 text-muted-foreground">
-                                    <IconSettings className="size-4" />
-                                    Advanced Settings
+                                    <IconFilter className="size-4" />
+                                    Filter Settings
                                 </span>
                             </AccordionTrigger>
                             <AccordionContent className="space-y-4 pt-2">

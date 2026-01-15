@@ -25,7 +25,8 @@
       "url": "https://pro.tailark.com/registry/{name}",
       "headers": {
         "Authorization": "Bearer ${TAILARK_API_KEY}"
-      }
+      },
+      "@ai-elements": "https://registry.ai-sdk.dev/{name}.json"
     }
   }
 }
