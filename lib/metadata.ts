@@ -80,17 +80,28 @@ export function createMetadata(overrides: {
     const { title, description, path } = overrides;
     const url = path ? `${siteConfig.url}${path}` : siteConfig.url;
 
-    return {
-        title,
-        description,
-        openGraph: {
-            title: title ? `${title} | ${siteConfig.name}` : undefined,
+    const metadata: Metadata = {};
+
+    // Only set title if provided (otherwise inherit from layout)
+    if (title) {
+        metadata.title = title;
+    }
+
+    // Only set description if provided
+    if (description) {
+        metadata.description = description;
+        metadata.openGraph = {
+            title: title ? `${title} | ${siteConfig.name}` : `${siteConfig.name} - ${siteConfig.tagline}`,
             description,
             url,
-        },
-        twitter: {
-            title: title ? `${title} | ${siteConfig.name}` : undefined,
+        };
+        metadata.twitter = {
+            card: "summary_large_image",
+            title: title ? `${title} | ${siteConfig.name}` : `${siteConfig.name} - ${siteConfig.tagline}`,
             description,
-        },
-    };
+            creator: siteConfig.creator,
+        };
+    }
+
+    return metadata;
 }
