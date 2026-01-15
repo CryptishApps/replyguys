@@ -114,7 +114,8 @@ export const recurringScrapeFunction = inngest.createFunction(
                 });
 
                 log("scrape", "Backwards scrape completed", { repliesCount: result.replies.length });
-                return { ...result, phase: "backwards" as const, exhausted: result.replies.length < 100 };
+                // Only switch to forward when we get 0 results - confirms history is truly exhausted
+                return { ...result, phase: "backwards" as const, exhausted: result.replies.length === 0 };
             } else {
                 // Phase 2: Forward pagination - get newer replies
                 const parsedDate = report.newest_reply_date ? new Date(report.newest_reply_date) : null;
@@ -212,10 +213,10 @@ export const recurringScrapeFunction = inngest.createFunction(
         }
 
         // Step 6: Chain another scrape if needed
-        // In backwards phase: chain if we got max results
+        // In backwards phase: chain if we got any results (keep paginating)
         // In forward phase: don't chain (wait for cron)
         const shouldChain = scrapeResult.phase === "backwards" && 
-                            scrapeResult.replies.length >= 100 && 
+                            scrapeResult.replies.length > 0 && 
                             insertResult.inserted > 0;
 
         if (shouldChain) {
