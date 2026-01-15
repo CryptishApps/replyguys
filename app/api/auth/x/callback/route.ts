@@ -24,24 +24,6 @@ interface XUserResponse {
     };
 }
 
-// Extract X user ID from JWT access token (sub claim)
-function getXUserIdFromToken(accessToken: string): string | null {
-    try {
-        // X OAuth 2.0 tokens are JWTs with the user ID in the 'sub' claim
-        const parts = accessToken.split(".");
-        if (parts.length !== 3) {
-            console.error("[auth] Token is not a valid JWT format, parts:", parts.length);
-            return null;
-        }
-        const payload = parts[1];
-        const decoded = JSON.parse(atob(payload));
-        console.log("[auth] Decoded token payload keys:", Object.keys(decoded));
-        return decoded.sub || null;
-    } catch (error) {
-        console.error("[auth] Failed to decode token:", error);
-        return null;
-    }
-}
 
 export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
@@ -95,74 +77,29 @@ export async function GET(request: NextRequest) {
         }
 
         const tokens: XTokenResponse = await tokenResponse.json();
-        console.log("[auth] Token exchange successful, token type:", tokens.token_type);
+        console.log("[auth] Token exchange successful");
 
         const adminClient = createAdminClient();
         const supabase = await createClient();
 
-        // Try to extract X user ID from the JWT to check for existing profile
-        const xIdFromToken = getXUserIdFromToken(tokens.access_token);
-        console.log("[auth] Extracted user ID from token:", xIdFromToken);
+        // Fetch user info from X API (tokens are opaque, not JWTs)
+        const userResponse = await fetch("https://api.twitter.com/2/users/me?user.fields=profile_image_url", {
+            headers: {
+                Authorization: `Bearer ${tokens.access_token}`,
+            },
+        });
 
-        let xUserData: { id: string; username: string; profile_image_url?: string };
-
-        // If we got the ID from token, check for existing profile first
-        if (xIdFromToken) {
-            const { data: existingProfile } = await adminClient
-                .from("profiles")
-                .select("id, x_username, avatar_url")
-                .eq("x_id", xIdFromToken)
-                .maybeSingle();
-
-            if (existingProfile) {
-                console.log("[auth] Found existing profile for user:", existingProfile.x_username);
-                xUserData = {
-                    id: xIdFromToken,
-                    username: existingProfile.x_username,
-                    profile_image_url: existingProfile.avatar_url,
-                };
-            } else {
-                // New user with valid token ID, still need to fetch username from API
-                console.log("[auth] New user, fetching profile from X API");
-                const userResponse = await fetch("https://api.twitter.com/2/users/me?user.fields=profile_image_url", {
-                    headers: {
-                        Authorization: `Bearer ${tokens.access_token}`,
-                    },
-                });
-
-                if (!userResponse.ok) {
-                    const errorText = await userResponse.text();
-                    console.error("[auth] Failed to fetch X user:", userResponse.status, errorText);
-                    return NextResponse.redirect(
-                        new URL("/login?error=user_fetch", request.url)
-                    );
-                }
-
-                const xUser: XUserResponse = await userResponse.json();
-                console.log("[auth] Fetched user from X API:", xUser.data.username);
-                xUserData = xUser.data;
-            }
-        } else {
-            // Token is not a JWT or couldn't be decoded, must fetch from API
-            console.log("[auth] Could not extract ID from token, fetching from X API");
-            const userResponse = await fetch("https://api.twitter.com/2/users/me?user.fields=profile_image_url", {
-                headers: {
-                    Authorization: `Bearer ${tokens.access_token}`,
-                },
-            });
-
-            if (!userResponse.ok) {
-                const errorText = await userResponse.text();
-                console.error("[auth] Failed to fetch X user:", userResponse.status, errorText);
-                return NextResponse.redirect(
-                    new URL("/login?error=user_fetch", request.url)
-                );
-            }
-
-            const xUser: XUserResponse = await userResponse.json();
-            console.log("[auth] Fetched user from X API:", xUser.data.username);
-            xUserData = xUser.data;
+        if (!userResponse.ok) {
+            const errorText = await userResponse.text();
+            console.error("[auth] Failed to fetch X user:", userResponse.status, errorText);
+            return NextResponse.redirect(
+                new URL("/login?error=user_fetch", request.url)
+            );
         }
+
+        const xUser: XUserResponse = await userResponse.json();
+        console.log("[auth] Fetched user from X API:", xUser.data.username);
+        const xUserData = xUser.data;
 
         // Use X user ID as the unique identifier for Supabase auth
         const email = `${xUserData.id}@x.replyguys.app`;
