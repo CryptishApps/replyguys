@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useCallback } from "react";
+import { useActionState, useState, useCallback, useEffect } from "react";
 import { createReport } from "@/app/(dashboard)/new/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,7 +23,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { WeightSliders } from "@/components/weight-sliders";
-import { IconLoader2, IconSettings, IconAdjustments, IconFilter } from "@tabler/icons-react";
+import { IconLoader2, IconAdjustments, IconFilter, IconClock } from "@tabler/icons-react";
 import { WEIGHT_PRESETS, type PresetName, type Weights } from "@/lib/ai/schemas";
 
 type PresetOption = PresetName | "custom";
@@ -36,12 +36,59 @@ const PRESET_OPTIONS: { value: PresetOption; label: string; description: string 
     { value: "custom", label: "Custom", description: "Configure your own weights" },
 ];
 
+function RateLimitCountdown({ retryAfter, onExpire }: { retryAfter: string; onExpire: () => void }) {
+    const [secondsLeft, setSecondsLeft] = useState(() => {
+        const diff = new Date(retryAfter).getTime() - Date.now();
+        return Math.max(0, Math.ceil(diff / 1000));
+    });
+
+    useEffect(() => {
+        if (secondsLeft <= 0) {
+            onExpire();
+            return;
+        }
+
+        const timer = setInterval(() => {
+            const diff = new Date(retryAfter).getTime() - Date.now();
+            const remaining = Math.max(0, Math.ceil(diff / 1000));
+            setSecondsLeft(remaining);
+            if (remaining <= 0) {
+                onExpire();
+            }
+        }, 1000);
+
+        return () => clearInterval(timer);
+    }, [retryAfter, secondsLeft, onExpire]);
+
+    return (
+        <div className="flex items-center gap-3 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <div className="flex items-center justify-center size-12 rounded-full bg-amber-500/20 text-amber-500">
+                <IconClock className="size-6" />
+            </div>
+            <div className="flex-1">
+                <p className="font-medium text-amber-500">Rate limit reached</p>
+                <p className="text-sm text-muted-foreground">
+                    You can create another report in{" "}
+                    <span className="font-mono font-semibold text-foreground tabular-nums">
+                        {secondsLeft}s
+                    </span>
+                </p>
+            </div>
+        </div>
+    );
+}
+
 export function ReportForm() {
     const [preset, setPreset] = useState<PresetOption>("balanced");
     const [weights, setWeights] = useState<Weights>(WEIGHT_PRESETS.balanced);
+    const [rateLimitedUntil, setRateLimitedUntil] = useState<string | null>(null);
 
     const handleWeightsChange = useCallback((newWeights: Weights) => {
         setWeights(newWeights);
+    }, []);
+
+    const handleRateLimitExpire = useCallback(() => {
+        setRateLimitedUntil(null);
     }, []);
 
     const [state, formAction, isPending] = useActionState(
@@ -49,10 +96,19 @@ export function ReportForm() {
             // Add weights to form data
             formData.set("weights", JSON.stringify(weights));
             formData.set("preset", preset);
-            return createReport(formData);
+            const result = await createReport(formData);
+            
+            // Handle rate limiting
+            if (!result.success && "rateLimited" in result && result.rateLimited) {
+                setRateLimitedUntil(result.retryAfter);
+            }
+            
+            return result;
         },
         null
     );
+
+    const isDisabled = isPending || !!rateLimitedUntil;
 
     return (
         <Card>
@@ -72,7 +128,7 @@ export function ReportForm() {
                             type="url"
                             placeholder="https://x.com/username/status/1234567890"
                             required
-                            disabled={isPending}
+                            disabled={isDisabled}
                             pattern="https?://(www\.|mobile\.)?(x\.com|twitter\.com)/[a-zA-Z0-9_]+/status/\d+.*"
                             title="Enter an X/Twitter post URL (e.g., https://x.com/username/status/1234567890)"
                         />
@@ -88,7 +144,7 @@ export function ReportForm() {
                             name="goal"
                             placeholder="What do you want to learn from these replies? e.g., 'Understand what features users want most' or 'Find common pain points with the current product'"
                             required
-                            disabled={isPending}
+                            disabled={isDisabled}
                             className="min-h-20"
                         />
                         <FieldDescription>
@@ -103,7 +159,7 @@ export function ReportForm() {
                             name="persona"
                             type="text"
                             placeholder="e.g., SaaS founders, indie hackers, marketers"
-                            disabled={isPending}
+                            disabled={isDisabled}
                         />
                         <FieldDescription>
                             Who are you trying to reach? This helps prioritize relevant feedback
@@ -119,7 +175,7 @@ export function ReportForm() {
                             min={1}
                             max={250}
                             defaultValue={100}
-                            disabled={isPending}
+                            disabled={isDisabled}
                         />
                         <FieldDescription>
                             Minimum qualified replies before generating summary. May collect more for a richer analysis.
@@ -140,7 +196,7 @@ export function ReportForm() {
                                     <Select
                                         value={preset}
                                         onValueChange={(value) => setPreset(value as PresetOption)}
-                                        disabled={isPending}
+                                        disabled={isDisabled}
                                     >
                                         <SelectTrigger className="w-full">
                                             <SelectValue />
@@ -161,7 +217,7 @@ export function ReportForm() {
                                 <WeightSliders
                                     preset={preset}
                                     onWeightsChange={handleWeightsChange}
-                                    disabled={isPending}
+                                    disabled={isDisabled}
                                 />
                             </AccordionContent>
                         </AccordionItem>
@@ -185,7 +241,7 @@ export function ReportForm() {
                                         min={0}
                                         defaultValue={0}
                                         placeholder="0"
-                                        disabled={isPending}
+                                        disabled={isDisabled}
                                     />
                                     <FieldDescription>
                                         Only include replies with at least this many characters
@@ -201,7 +257,7 @@ export function ReportForm() {
                                             Only include replies from X Premium subscribers
                                         </p>
                                     </div>
-                                    <Switch id="blueOnly" name="blueOnly" disabled={isPending} />
+                                    <Switch id="blueOnly" name="blueOnly" disabled={isDisabled} />
                                 </div>
 
                                 <Field>
@@ -214,7 +270,7 @@ export function ReportForm() {
                                         type="number"
                                         min={0}
                                         placeholder="Optional"
-                                        disabled={isPending}
+                                        disabled={isDisabled}
                                     />
                                     <FieldDescription>
                                         Only include replies from accounts with at least this many
@@ -225,16 +281,25 @@ export function ReportForm() {
                         </AccordionItem>
                     </Accordion>
 
-                    {state && !state.success && (
-                        <p className="text-sm text-destructive">{state.error}</p>
+                    {rateLimitedUntil ? (
+                        <RateLimitCountdown
+                            retryAfter={rateLimitedUntil}
+                            onExpire={handleRateLimitExpire}
+                        />
+                    ) : (
+                        state && !state.success && (
+                            <p className="text-sm text-destructive">{state.error}</p>
+                        )
                     )}
 
-                    <Button type="submit" disabled={isPending} className="w-full">
+                    <Button type="submit" disabled={isDisabled} className="w-full">
                         {isPending ? (
                             <>
                                 <IconLoader2 className="size-4 animate-spin" />
                                 Creating Report...
                             </>
+                        ) : rateLimitedUntil ? (
+                            "Please wait..."
                         ) : (
                             "Create Report"
                         )}

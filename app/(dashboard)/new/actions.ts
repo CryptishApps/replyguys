@@ -1,13 +1,15 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
 import { inngest } from "@/lib/inngest/client";
 import { WEIGHT_PRESETS, type Weights } from "@/lib/ai/schemas";
 
 type ActionResult =
     | { success: true; reportId: string }
-    | { success: false; error: string };
+    | { success: false; error: string; rateLimited?: false }
+    | { success: false; error: string; rateLimited: true; retryAfter: string };
 
 type UrlValidationResult =
     | { valid: true; conversationId: string }
@@ -140,7 +142,36 @@ export async function createReport(formData: FormData): Promise<ActionResult> {
         return { success: false, error: "Not authenticated" };
     }
 
-    const { data: report, error } = await supabase
+    // Rate limiting: max 3 reports per minute
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000).toISOString();
+    const { data: recentReports, error: rateError } = await supabase
+        .from("reports")
+        .select("created_at")
+        .eq("user_id", user.id)
+        .gte("created_at", oneMinuteAgo)
+        .order("created_at", { ascending: true })
+        .limit(3);
+
+    if (rateError) {
+        console.error("Failed to check rate limit:", rateError);
+        return { success: false, error: "Failed to check rate limit" };
+    }
+
+    if (recentReports && recentReports.length >= 3) {
+        // Calculate when the oldest report falls outside the window
+        const oldestReportTime = new Date(recentReports[0].created_at).getTime();
+        const retryAfter = new Date(oldestReportTime + 60 * 1000).toISOString();
+        return {
+            success: false,
+            error: "Rate limit exceeded. Please wait before creating another report.",
+            rateLimited: true,
+            retryAfter,
+        };
+    }
+
+    // Use admin client for insert to enforce rate limiting via server action only
+    const adminClient = createAdminClient();
+    const { data: report, error } = await adminClient
         .from("reports")
         .insert({
             user_id: user.id,
