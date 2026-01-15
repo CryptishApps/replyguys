@@ -33,6 +33,12 @@ type Events = {
             reportId: string;
         };
     };
+    "report.generate-viral-tweet": {
+        data: {
+            reportId: string;
+            userId: string;
+        };
+    };
 };
 
 export const inngest = new Inngest({

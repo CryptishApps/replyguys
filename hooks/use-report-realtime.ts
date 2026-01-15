@@ -19,6 +19,8 @@ export interface ReportData {
     title: string | null;
     summary: unknown | null;
     summary_status: "pending" | "generating" | "completed" | "failed";
+    viral_tweet_id: string | null;
+    viral_tweet_status: "pending" | "generating" | "posted" | "failed" | null;
 }
 
 export interface Reply {
@@ -91,7 +93,7 @@ export function useReportRealtime({
         const [reportResult, repliesResult, activityResult] = await Promise.all([
             supabase
                 .from("reports")
-                .select("id, status, reply_count, reply_threshold, useful_count, qualified_count, original_tweet_text, original_author_username, original_author_avatar, title, summary, summary_status")
+                .select("id, status, reply_count, reply_threshold, useful_count, qualified_count, original_tweet_text, original_author_username, original_author_avatar, title, summary, summary_status, viral_tweet_id, viral_tweet_status")
                 .eq("id", reportId)
                 .single(),
             supabase

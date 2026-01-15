@@ -48,7 +48,8 @@ export default async function ReportPage({ params }: PageProps) {
             .select(`
                 id, x_post_url, conversation_id, status, reply_count, created_at,
                 original_tweet_text, original_author_username, original_author_avatar,
-                reply_threshold, useful_count, qualified_count, title, summary, summary_status
+                reply_threshold, useful_count, qualified_count, title, summary, summary_status,
+                viral_tweet_id, viral_tweet_status
             `)
             .eq("id", id)
             .eq("user_id", user.id)
@@ -400,6 +401,8 @@ export default async function ReportPage({ params }: PageProps) {
                         title: report.title,
                         summary: report.summary,
                         summary_status: report.summary_status ?? "pending",
+                        viral_tweet_id: report.viral_tweet_id ?? null,
+                        viral_tweet_status: report.viral_tweet_status ?? null,
                     }}
                     initialReplies={replies}
                     initialActivity={activity}

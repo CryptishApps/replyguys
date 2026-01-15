@@ -16,3 +16,26 @@ export function Logo({ includeText = true, size = "default" }: { includeText?: b
         </div>
     )
 }
+
+export function LogoIcon({ uniColor, className, ...props }: { uniColor?: boolean; className?: string } & React.HTMLAttributes<HTMLDivElement>) {
+    return (
+        <div className={cn("flex items-center justify-center", className)} {...props}>
+            <Image 
+                src={uniColor ? logoWhite : logoBlack} 
+                alt="" 
+                width={512} 
+                height={512} 
+                className={cn("opacity-5", uniColor ? "block" : "block dark:hidden")}
+            />
+            {!uniColor && (
+                <Image 
+                    src={logoWhite} 
+                    alt="" 
+                    width={512} 
+                    height={512} 
+                    className="hidden dark:block opacity-5"
+                />
+            )}
+        </div>
+    )
+}

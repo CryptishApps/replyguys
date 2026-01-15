@@ -16,7 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { IconLoader2 } from "@tabler/icons-react";
 import type { ReportSummary as ReportSummaryType } from "@/lib/ai/schemas";
-import { generateSummary } from "./actions";
+import { generateSummary, getShareToXUrl } from "./actions";
 
 interface ReportContentProps {
     reportId: string;
@@ -153,6 +153,16 @@ export function ReportContent({
         return result;
     }, [reportId, refresh]);
 
+    const handleShareToX = useCallback(async () => {
+        const result = await getShareToXUrl(reportId);
+        if (result.success) {
+            // Open X tweet composer in new tab
+            window.open(result.url, "_blank", "noopener,noreferrer");
+            return { success: true };
+        }
+        return result;
+    }, [reportId]);
+
     const displayStatus = getDisplayStatus(report);
     const isLoading = displayStatus.isLoading;
     const isComplete =
@@ -251,6 +261,7 @@ export function ReportContent({
                     qualifiedCount={replies.length}
                     isMonitoringComplete={report.status === "completed"}
                     onGenerateSummary={handleGenerateSummary}
+                    onShareToX={handleShareToX}
                 />
             )}
 

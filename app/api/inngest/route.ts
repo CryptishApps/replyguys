@@ -6,6 +6,7 @@ import { evaluateReplyFunction } from "@/lib/inngest/functions/evaluate-reply";
 import { evaluateReplyBatchFunction } from "@/lib/inngest/functions/evaluate-reply-batch";
 import { pollActiveReportsFunction } from "@/lib/inngest/functions/poll-active-reports";
 import { generateSummaryFunction } from "@/lib/inngest/functions/generate-summary";
+import { generateViralTweetFunction } from "@/lib/inngest/functions/generate-viral-tweet";
 
 // Vercel Hobby + Fluid Compute: 300s max
 export const maxDuration = 300;
@@ -19,5 +20,6 @@ export const { GET, POST, PUT } = serve({
         evaluateReplyBatchFunction,
         pollActiveReportsFunction,
         generateSummaryFunction,
+        generateViralTweetFunction,
     ],
 });

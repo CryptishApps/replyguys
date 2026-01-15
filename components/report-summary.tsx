@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,7 @@ import {
     IconAlertCircle,
     IconStar,
     IconLoader2,
+    IconBrandX,
 } from "@tabler/icons-react";
 import type { ReportSummary as ReportSummaryType } from "@/lib/ai/schemas";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
@@ -28,6 +29,7 @@ interface ReportSummaryProps {
     qualifiedCount?: number;
     isMonitoringComplete?: boolean;
     onGenerateSummary?: () => Promise<{ success: boolean; error?: string }>;
+    onShareToX?: () => Promise<{ success: boolean; error?: string }>;
 }
 
 const priorityColors = {
@@ -43,13 +45,33 @@ const sentimentColors = {
     neutral: "bg-gray-500/10 text-gray-600 border-gray-500/20",
 };
 
-export function ReportSummary({ summary, summaryStatus, qualifiedCount = 0, isMonitoringComplete = false, onGenerateSummary }: ReportSummaryProps) {
+export function ReportSummary({ 
+    summary, 
+    summaryStatus, 
+    qualifiedCount = 0, 
+    isMonitoringComplete = false, 
+    onGenerateSummary,
+    onShareToX,
+}: ReportSummaryProps) {
     const [isPending, startTransition] = useTransition();
+    const [isSharing, startSharingTransition] = useTransition();
+    const [shareError, setShareError] = useState<string | null>(null);
 
     const handleGenerateSummary = () => {
         if (!onGenerateSummary) return;
         startTransition(async () => {
             await onGenerateSummary();
+        });
+    };
+
+    const handleShareToX = () => {
+        if (!onShareToX) return;
+        setShareError(null);
+        startSharingTransition(async () => {
+            const result = await onShareToX();
+            if (!result.success && result.error) {
+                setShareError(result.error);
+            }
         });
     };
 
@@ -152,6 +174,39 @@ export function ReportSummary({ summary, summaryStatus, qualifiedCount = 0, isMo
                                 Note
                             </Badge>
                             <p className="leading-relaxed">{summary.quality_note}</p>
+                        </div>
+                    )}
+
+                    {/* Share to X Section */}
+                    {onShareToX && (
+                        <div className="mt-6 pt-4 border-t">
+                            <div className="flex items-center justify-between gap-4">
+                                <div className="text-sm text-muted-foreground">
+                                    Share this analysis with your followers
+                                </div>
+                                
+                                <Button
+                                    onClick={handleShareToX}
+                                    disabled={isSharing}
+                                    size="sm"
+                                >
+                                    {isSharing ? (
+                                        <>
+                                            <IconLoader2 className="size-4 animate-spin" />
+                                            Opening...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <IconBrandX className="size-4" />
+                                            Share to X
+                                        </>
+                                    )}
+                                </Button>
+                            </div>
+                            
+                            {shareError && (
+                                <p className="mt-2 text-sm text-red-500">{shareError}</p>
+                            )}
                         </div>
                     )}
                 </CardContent>
