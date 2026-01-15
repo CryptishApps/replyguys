@@ -168,7 +168,6 @@ export const ReportSummarySchema = z.object({
 
     top_insights: z
         .array(TopInsightSchema)
-        .max(5)
         .optional()
         .describe("Up to 5 standout insights with attribution"),
 
