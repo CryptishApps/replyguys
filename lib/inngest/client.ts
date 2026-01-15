@@ -21,6 +21,13 @@ type Events = {
             minLength: number;
         };
     };
+    "reply.evaluate-batch": {
+        data: {
+            reportId: string;
+            minLength: number;
+            replies: Array<{ replyId: string; text: string }>;
+        };
+    };
     "report.generate-summary": {
         data: {
             reportId: string;

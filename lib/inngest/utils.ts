@@ -394,22 +394,39 @@ export interface EvaluationEventData {
     minLength: number;
 }
 
+const BATCH_SIZE = 10;
+
+interface BatchEventData {
+    reportId: string;
+    minLength: number;
+    replies: Array<{ replyId: string; text: string }>;
+}
+
 /**
- * Creates evaluation event payloads for replies.
+ * Creates batched evaluation events (groups of 10).
  * Call step.sendEvent with these to fan out evaluation.
  */
 export function createEvaluationEvents(
     replies: ScrapedTweet[],
     reportId: string,
     minLength: number
-): Array<{ name: "reply.evaluate"; data: EvaluationEventData }> {
-    return replies.map((reply) => ({
-        name: "reply.evaluate" as const,
-        data: {
-            replyId: String(reply.id),
-            reportId,
-            text: reply.text,
-            minLength,
-        },
-    }));
+): Array<{ name: "reply.evaluate-batch"; data: BatchEventData }> {
+    const batches: Array<{ name: "reply.evaluate-batch"; data: BatchEventData }> = [];
+
+    for (let i = 0; i < replies.length; i += BATCH_SIZE) {
+        const batch = replies.slice(i, i + BATCH_SIZE);
+        batches.push({
+            name: "reply.evaluate-batch" as const,
+            data: {
+                reportId,
+                minLength,
+                replies: batch.map((reply) => ({
+                    replyId: String(reply.id),
+                    text: reply.text,
+                })),
+            },
+        });
+    }
+
+    return batches;
 }
